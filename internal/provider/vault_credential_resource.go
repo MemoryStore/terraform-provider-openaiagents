@@ -23,6 +23,7 @@ import (
 
 var _ resource.Resource = &VaultCredentialResource{}
 var _ resource.ResourceWithImportState = &VaultCredentialResource{}
+var _ resource.ResourceWithValidateConfig = &VaultCredentialResource{}
 
 // VaultCredentialResource manages a vault credential.
 type VaultCredentialResource struct {
@@ -152,6 +153,30 @@ func (r *VaultCredentialResource) Configure(_ context.Context, req resource.Conf
 	r.client = configureClient(req.ProviderData, &resp.Diagnostics)
 }
 
+func (r *VaultCredentialResource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var cfg vaultCredentialModel
+	resp.Diagnostics.Append(req.Config.Get(ctx, &cfg)...)
+	if resp.Diagnostics.HasError() || cfg.AuthType.IsUnknown() {
+		return
+	}
+	switch cfg.AuthType.ValueString() {
+	case "static_bearer":
+		if !cfg.ExpiresAt.IsNull() && !cfg.ExpiresAt.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(path.Root("expires_at"), "Invalid expires_at", "expires_at is only valid for mcp_oauth credentials")
+		}
+		if !cfg.Refresh.IsNull() && !cfg.Refresh.IsUnknown() {
+			resp.Diagnostics.AddAttributeError(path.Root("refresh"), "Invalid refresh", "refresh is only valid for mcp_oauth credentials")
+		}
+		if !cfg.AccessToken.IsNull() && !cfg.AccessToken.IsUnknown() && cfg.AccessToken.ValueString() != "" {
+			resp.Diagnostics.AddAttributeError(path.Root("access_token"), "Invalid access_token", "access_token is only valid for mcp_oauth credentials")
+		}
+	case "mcp_oauth":
+		if !cfg.Token.IsNull() && !cfg.Token.IsUnknown() && cfg.Token.ValueString() != "" {
+			resp.Diagnostics.AddAttributeError(path.Root("token"), "Invalid token", "token is only valid for static_bearer credentials")
+		}
+	}
+}
+
 func (r *VaultCredentialResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var plan vaultCredentialModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -217,7 +242,6 @@ func (r *VaultCredentialResource) Update(ctx context.Context, req resource.Updat
 			MCPServerURL: plan.MCPServerURL.ValueString(),
 			ExpiresAt:    stringPtr(plan.ExpiresAt),
 		})
-		next.Refresh = plan.Refresh
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
 	}
@@ -260,13 +284,54 @@ func credentialNeedsRemoteUpdate(plan, state vaultCredentialModel) bool {
 	if revisionChanged(plan.TokenRevision, state.TokenRevision) {
 		return true
 	}
+	if plan.AuthType.ValueString() != "mcp_oauth" {
+		return false
+	}
 	if !plan.ExpiresAt.Equal(state.ExpiresAt) {
 		return true
 	}
-	if !plan.Refresh.Equal(state.Refresh) {
-		return true
+	return refreshGrantChanged(plan.Refresh, state.Refresh)
+}
+
+// refreshGrantChanged compares non-secret refresh fields. Write-only
+// refresh_token and client_secret are stripped from state and must not
+// trigger a rotation on a no-op apply.
+func refreshGrantChanged(plan, state types.Object) bool {
+	if plan.IsUnknown() {
+		return false
 	}
-	return false
+	pEndpoint, pClient, pScope, pResource, pAuthType, pNull := refreshPublicView(plan)
+	sEndpoint, sClient, sScope, sResource, sAuthType, sNull := refreshPublicView(state)
+	if pNull && sNull {
+		return false
+	}
+	return pNull != sNull || pEndpoint != sEndpoint || pClient != sClient || pScope != sScope || pResource != sResource || pAuthType != sAuthType
+}
+
+func refreshPublicView(obj types.Object) (tokenEndpoint, clientID, scope, resource, authType string, isNull bool) {
+	if obj.IsNull() || obj.IsUnknown() {
+		return "", "", "", "", "", true
+	}
+	attrs := obj.Attributes()
+	tokenEndpoint = publicStringAttr(attrs["token_endpoint"])
+	clientID = publicStringAttr(attrs["client_id"])
+	scope = publicStringAttr(attrs["scope"])
+	resource = publicStringAttr(attrs["resource"])
+	if tea, ok := attrs["token_endpoint_auth"].(types.Object); ok && !tea.IsNull() && !tea.IsUnknown() {
+		authType = publicStringAttr(tea.Attributes()["type"])
+	}
+	return tokenEndpoint, clientID, scope, resource, authType, false
+}
+
+func publicStringAttr(v attr.Value) string {
+	if v == nil || v.IsNull() || v.IsUnknown() {
+		return ""
+	}
+	s, ok := v.(types.String)
+	if !ok {
+		return ""
+	}
+	return s.ValueString()
 }
 
 func credentialAuthFromConfig(ctx context.Context, plan, config vaultCredentialModel) (client.CredentialAuthWrite, diag.Diagnostics) {

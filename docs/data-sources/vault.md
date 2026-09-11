@@ -13,6 +13,10 @@ Look up a vault by ID. Secrets are never returned.
 ## Example Usage
 
 ```terraform
+resource "openaiagents_vault" "shared" {
+  name = "shared-mcp"
+}
+
 data "openaiagents_vault" "selected" {
   id = openaiagents_vault.shared.id
 }

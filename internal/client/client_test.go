@@ -94,6 +94,14 @@ func TestValidatePersistedToolsRejectsUnknownAndSecrets(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "authorization") {
 		t.Fatalf("expected authorization error, got %v", err)
 	}
+	err = client.ValidatePersistedTools([]json.RawMessage{[]byte(`{"type":"mcp","transport":{"type":"stdio","cwd":"/workspace"}}`)})
+	if err == nil || !strings.Contains(err.Error(), "command and cwd") {
+		t.Fatalf("expected stdio command/cwd error, got %v", err)
+	}
+	err = client.ValidatePersistedTools([]json.RawMessage{[]byte(`{"type":"mcp","transport":{"type":"stdio","command":"python"}}`)})
+	if err == nil || !strings.Contains(err.Error(), "command and cwd") {
+		t.Fatalf("expected stdio command/cwd error, got %v", err)
+	}
 }
 
 func TestRejectExpandedSecretHeaders(t *testing.T) {
@@ -361,6 +369,68 @@ func TestVaultCredentialRotation(t *testing.T) {
 	}
 	if fake.StoredToken(cred.ID) != "rotated" {
 		t.Fatal("token not rotated")
+	}
+}
+
+func TestOAuthRefreshScopeResourcePersisted(t *testing.T) {
+	fake := testfake.Start(t)
+	c, err := client.New(client.Options{APIKey: "sk-test", BaseURL: fake.URL()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault, err := c.CreateVault(context.Background(), client.VaultWrite{Name: client.Set("v")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cred, err := c.CreateCredential(context.Background(), vault.ID, client.CredentialCreate{
+		Name: "c",
+		Auth: client.CredentialAuthWrite{
+			Type:         "mcp_oauth",
+			MCPServerURL: "https://mcp.example.com",
+			AccessToken:  "tok",
+			ExpiresAt:    client.Set("2026-12-01T00:00:00Z"),
+			Refresh: &client.OAuthRefreshWrite{
+				TokenEndpoint: "https://auth.example.com/token",
+				ClientID:      "client",
+				RefreshToken:  "rt",
+				Scope:         "mcp:read",
+				Resource:      "https://mcp.example.com",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fake.StoredRefresh(cred.ID)
+	if got.Scope != "mcp:read" || got.Resource != "https://mcp.example.com" {
+		t.Fatalf("stored refresh after create = %+v", got)
+	}
+	_, err = c.RotateCredential(context.Background(), vault.ID, cred.ID, client.CredentialRotate{
+		AuthType: "mcp_oauth",
+		Refresh: client.Set(client.OAuthRefreshWrite{
+			TokenEndpoint: "https://auth.example.com/token",
+			ClientID:      "client",
+			Scope:         "mcp:read mcp:write",
+			Resource:      "https://mcp.example.com/v2",
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = fake.StoredRefresh(cred.ID)
+	if got.Scope != "mcp:read mcp:write" {
+		t.Fatalf("stored scope after rotate = %q", got.Scope)
+	}
+	if got.Resource != "https://mcp.example.com/v2" {
+		t.Fatalf("stored resource after rotate = %q", got.Resource)
+	}
+	var auth map[string]any
+	if err := json.Unmarshal(fake.CredentialLastAuth(cred.ID), &auth); err != nil {
+		t.Fatal(err)
+	}
+	refresh, _ := auth["refresh"].(map[string]any)
+	if refresh["scope"] != "mcp:read mcp:write" || refresh["resource"] != "https://mcp.example.com/v2" {
+		t.Fatalf("rotate auth payload = %#v", auth)
 	}
 }
 

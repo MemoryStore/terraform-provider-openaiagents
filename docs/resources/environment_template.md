@@ -43,11 +43,11 @@ resource "openaiagents_environment_template" "skills" {
       type              = "inline"
       name              = "docs-helper"
       description       = "Find answers in documentation."
-      source_data       = var.plugin_archive_base64
+      source_data       = "UEsDBAoAAAAAAAEAAA=="
       source_media_type = "application/zip"
     }
   ]
-  plugins_revision = var.plugin_archive_revision
+  plugins_revision = 1
 }
 ```
 

@@ -42,6 +42,7 @@ type Request struct {
 
 type agentRecord struct {
 	client.Agent
+	LastWrite []byte
 }
 
 type templateRecord struct {
@@ -58,15 +59,21 @@ type vaultRecord struct {
 }
 
 type credentialRecord struct {
-	Public       client.Credential
-	Token        string
-	AccessToken  string
-	RefreshToken string
-	ClientSecret string
-	AuthType     string
-	MCPServerURL string
-	VaultID      string
-	RotateCount  int
+	Public                client.Credential
+	Token                 string
+	AccessToken           string
+	RefreshToken          string
+	ClientSecret          string
+	RefreshScope          string
+	RefreshResource       string
+	TokenEndpoint         string
+	ClientID              string
+	TokenEndpointAuthType string
+	AuthType              string
+	MCPServerURL          string
+	VaultID               string
+	RotateCount           int
+	LastAuth              []byte
 }
 
 // New constructs an in-memory fake without listening.
@@ -91,8 +98,9 @@ func Listen() (*Server, error) {
 		}
 		s.ln = ln
 		s.base = "http://" + ln.Addr().String()
-		s.srv = &http.Server{Handler: s}
-		go func() { _ = s.srv.Serve(ln) }()
+		srv := &http.Server{Handler: s}
+		s.srv = srv
+		go func() { _ = srv.Serve(ln) }()
 		ok := false
 		deadline := time.Now().Add(300 * time.Millisecond)
 		for time.Now().Before(deadline) {
@@ -108,7 +116,10 @@ func Listen() (*Server, error) {
 		if ok {
 			return s, nil
 		}
-		_ = s.Close()
+		_ = srv.Close()
+		_ = ln.Close()
+		s.srv = nil
+		s.ln = nil
 	}
 	return nil, fmt.Errorf("fake API server never accepted connections: %v", lastErr)
 }
@@ -253,6 +264,7 @@ func (s *Server) createAgent(w http.ResponseWriter, body []byte) {
 		Text:        &client.Text{Format: &client.TextFormat{Type: "text"}, Verbosity: strPtr("medium")},
 		Tools:       []json.RawMessage{},
 	}}
+	rec.LastWrite = append([]byte(nil), body...)
 	applyAgent(rec, raw, true)
 	normalizeAgent(rec)
 	s.mu.Lock()
@@ -285,6 +297,7 @@ func (s *Server) updateAgent(w http.ResponseWriter, id string, body []byte) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	rec.LastWrite = append([]byte(nil), body...)
 	applyAgent(rec, raw, false)
 	normalizeAgent(rec)
 	rec.UpdatedAt = time.Now().Unix()
@@ -396,6 +409,12 @@ func normalizeTool(raw json.RawMessage) json.RawMessage {
 	case "mcp":
 		if _, ok := obj["required"]; !ok {
 			obj["required"] = false
+		}
+	case "web_search":
+		// Hosted API returns a web_search object even when the write payload
+		// is only {"type":"web_search"}. Nested filters stay omitted unless set.
+		if _, ok := obj["type"]; !ok {
+			obj["type"] = "web_search"
 		}
 	}
 	b, err := json.Marshal(obj)
@@ -729,15 +748,11 @@ func (s *Server) createCredential(w http.ResponseWriter, vaultID string, body []
 	if exp, ok := auth["expires_at"].(string); ok {
 		rec.Public.ExpiresAt = &exp
 	}
-	if refresh, ok := auth["refresh"].(map[string]any); ok {
-		if rt, ok := refresh["refresh_token"].(string); ok {
-			rec.RefreshToken = rt
-		}
-		if tea, ok := refresh["token_endpoint_auth"].(map[string]any); ok {
-			if cs, ok := tea["client_secret"].(string); ok {
-				rec.ClientSecret = cs
-			}
-		}
+	if refresh, exists := auth["refresh"]; exists {
+		applyCredentialRefresh(rec, refresh)
+	}
+	if authJSON, err := json.Marshal(auth); err == nil {
+		rec.LastAuth = authJSON
 	}
 	s.mu.Lock()
 	s.credentials[id] = rec
@@ -793,14 +808,10 @@ func (s *Server) rotateCredential(w http.ResponseWriter, vaultID, id string, bod
 		rec.Public.ExpiresAt = stringOrNil(exp)
 	}
 	if refresh, exists := auth["refresh"]; exists {
-		if refresh == nil {
-			rec.RefreshToken = ""
-			rec.ClientSecret = ""
-		} else if m, ok := refresh.(map[string]any); ok {
-			if rt, ok := m["refresh_token"].(string); ok {
-				rec.RefreshToken = rt
-			}
-		}
+		applyCredentialRefresh(rec, refresh)
+	}
+	if authJSON, err := json.Marshal(auth); err == nil {
+		rec.LastAuth = authJSON
 	}
 	rec.Public.UpdatedAt = time.Now().Unix()
 	writeJSON(w, http.StatusOK, publicCredential(rec))
@@ -815,6 +826,25 @@ func publicCredential(rec *credentialRecord) map[string]any {
 	}
 	if rec.Public.ExpiresAt != nil {
 		auth["expires_at"] = *rec.Public.ExpiresAt
+	}
+	if rec.TokenEndpoint != "" || rec.ClientID != "" || rec.RefreshScope != "" || rec.RefreshResource != "" {
+		refresh := map[string]any{}
+		if rec.TokenEndpoint != "" {
+			refresh["token_endpoint"] = rec.TokenEndpoint
+		}
+		if rec.ClientID != "" {
+			refresh["client_id"] = rec.ClientID
+		}
+		if rec.RefreshScope != "" {
+			refresh["scope"] = rec.RefreshScope
+		}
+		if rec.RefreshResource != "" {
+			refresh["resource"] = rec.RefreshResource
+		}
+		if rec.TokenEndpointAuthType != "" {
+			refresh["token_endpoint_auth"] = map[string]any{"type": rec.TokenEndpointAuthType}
+		}
+		auth["refresh"] = refresh
 	}
 	out := map[string]any{
 		"id":         rec.Public.ID,
@@ -854,6 +884,53 @@ func (s *Server) LastRequest() Request {
 		return Request{}
 	}
 	return s.Requests[len(s.Requests)-1]
+}
+
+// AgentLastWrite returns the raw JSON body of the last create or update for an agent.
+// Tests use this to prove request mapping; it is the inbound payload, not the normalized store.
+func (s *Server) AgentLastWrite(id string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.agents[id]
+	if !ok {
+		return nil
+	}
+	return append([]byte(nil), rec.LastWrite...)
+}
+
+// CredentialLastAuth returns the raw auth object from the last create or rotate.
+func (s *Server) CredentialLastAuth(id string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.credentials[id]
+	if !ok {
+		return nil
+	}
+	return append([]byte(nil), rec.LastAuth...)
+}
+
+// StoredOAuthRefresh is non-secret OAuth refresh material stored by the fake.
+type StoredOAuthRefresh struct {
+	Scope         string
+	Resource      string
+	TokenEndpoint string
+	ClientID      string
+}
+
+// StoredRefresh returns OAuth refresh grant fields stored for a credential.
+func (s *Server) StoredRefresh(id string) StoredOAuthRefresh {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.credentials[id]
+	if !ok {
+		return StoredOAuthRefresh{}
+	}
+	return StoredOAuthRefresh{
+		Scope:         rec.RefreshScope,
+		Resource:      rec.RefreshResource,
+		TokenEndpoint: rec.TokenEndpoint,
+		ClientID:      rec.ClientID,
+	}
 }
 
 // Agent returns a stored agent by ID.
@@ -925,6 +1002,57 @@ func (s *Server) StoredToken(id string) string {
 		return rec.Token
 	}
 	return ""
+}
+
+func applyCredentialRefresh(rec *credentialRecord, refresh any) {
+	if refresh == nil {
+		rec.RefreshToken = ""
+		rec.ClientSecret = ""
+		rec.RefreshScope = ""
+		rec.RefreshResource = ""
+		rec.TokenEndpoint = ""
+		rec.ClientID = ""
+		rec.TokenEndpointAuthType = ""
+		return
+	}
+	m, ok := refresh.(map[string]any)
+	if !ok {
+		return
+	}
+	if v, ok := m["refresh_token"].(string); ok {
+		rec.RefreshToken = v
+	}
+	if v, exists := m["scope"]; exists {
+		if s, ok := v.(string); ok {
+			rec.RefreshScope = s
+		} else if v == nil {
+			rec.RefreshScope = ""
+		}
+	}
+	if v, exists := m["resource"]; exists {
+		if s, ok := v.(string); ok {
+			rec.RefreshResource = s
+		} else if v == nil {
+			rec.RefreshResource = ""
+		}
+	}
+	if v, ok := m["token_endpoint"].(string); ok {
+		rec.TokenEndpoint = v
+	}
+	if v, ok := m["client_id"].(string); ok {
+		rec.ClientID = v
+	}
+	if tea, ok := m["token_endpoint_auth"].(map[string]any); ok {
+		if t, ok := tea["type"].(string); ok {
+			rec.TokenEndpointAuthType = t
+		}
+		if cs, ok := tea["client_secret"].(string); ok {
+			rec.ClientSecret = cs
+		}
+	} else if _, exists := m["token_endpoint_auth"]; exists && m["token_endpoint_auth"] == nil {
+		rec.TokenEndpointAuthType = ""
+		rec.ClientSecret = ""
+	}
 }
 
 func stringOrNil(v any) *string {

@@ -13,8 +13,12 @@ A vault credential for MCP authentication. Secrets are write-only and never stor
 ## Example Usage
 
 ```terraform
+resource "openaiagents_vault" "shared" {
+  name = "shared-mcp"
+}
+
 ephemeral "terraform_data" "mcp_token" {
-  input = var.mcp_bearer_token
+  input = "example-token"
 }
 
 resource "openaiagents_vault_credential" "docs" {
@@ -23,7 +27,7 @@ resource "openaiagents_vault_credential" "docs" {
   auth_type      = "static_bearer"
   mcp_server_url = "https://mcp.example.com"
   token          = ephemeral.terraform_data.mcp_token.input
-  token_revision = var.mcp_token_revision
+  token_revision = 1
 }
 ```
 

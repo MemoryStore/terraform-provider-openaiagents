@@ -163,12 +163,8 @@ resource "openaiagents_vault_credential" "test" {
 }
 
 func TestAccVaultCredentialOAuth(t *testing.T) {
-	resource.Test(t, resource.TestCase{
-		IsUnitTest:               true,
-		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
-		Steps: []resource.TestStep{
-			{
-				Config: testConfig() + `
+	fake := testFake
+	oauthConfig := testConfig() + `
 resource "openaiagents_vault" "test" {
   name = "oauth"
 }
@@ -189,7 +185,13 @@ resource "openaiagents_vault_credential" "test" {
     }
   }
 }
-`,
+`
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: oauthConfig,
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("openaiagents_vault_credential.test", "auth_type", "mcp_oauth"),
 					resource.TestCheckResourceAttr("openaiagents_vault_credential.test", "mcp_server_url", "https://mcp.example.com"),
@@ -197,7 +199,27 @@ resource "openaiagents_vault_credential" "test" {
 					resource.TestCheckNoResourceAttr("openaiagents_vault_credential.test", "access_token"),
 					resource.TestCheckNoResourceAttr("openaiagents_vault_credential.test", "refresh.refresh_token"),
 					resource.TestCheckNoResourceAttr("openaiagents_vault_credential.test", "refresh.token_endpoint_auth.client_secret"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources["openaiagents_vault_credential.test"].Primary.ID
+						if fake.CredentialRotateCount(id) != 0 {
+							return fmt.Errorf("create rotated credentials")
+						}
+						return nil
+					},
 				),
+			},
+			{
+				Config: oauthConfig,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				Check: func(s *terraform.State) error {
+					id := s.RootModule().Resources["openaiagents_vault_credential.test"].Primary.ID
+					if fake.CredentialRotateCount(id) != 0 {
+						return fmt.Errorf("oauth no-op apply rotated credentials")
+					}
+					return nil
+				},
 			},
 		},
 	})

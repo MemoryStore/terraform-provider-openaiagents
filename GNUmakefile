@@ -15,7 +15,7 @@ generate:
 fmt:
 	gofmt -s -w -e .
 
-test:
+test: lint generate
 	env -u OPENAI_API_KEY TF_ACC=1 go test -v -cover -timeout=120s -parallel=10 ./...
 
 testacc:
