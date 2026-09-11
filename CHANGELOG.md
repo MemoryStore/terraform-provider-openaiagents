@@ -1,3 +1,9 @@
+## Unreleased
+
+BUG FIXES:
+
+* MCP header maps with unknown values (for example a resource ID) no longer fail planning; nested collection elements are checked before conversion and validated at apply
+
 ## 0.1.4 (2026-09-11)
 
 BUG FIXES:

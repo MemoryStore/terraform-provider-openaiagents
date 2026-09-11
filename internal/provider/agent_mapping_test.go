@@ -101,6 +101,65 @@ func TestToolsToAPISkipsUnknownMCPServerURL(t *testing.T) {
 	}
 }
 
+func TestToolsToAPISkipsUnknownMCPHeaderValue(t *testing.T) {
+	ctx := context.Background()
+	headers, diags := types.MapValue(types.StringType, map[string]attr.Value{
+		"X-Deployment": types.StringUnknown(),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	transport, diags := types.ObjectValue(transportAttrTypes, map[string]attr.Value{
+		"type":       types.StringValue("http"),
+		"server_url": types.StringValue("https://mcp.example.com"),
+		"headers":    headers,
+		"command":    types.StringNull(),
+		"cwd":        types.StringNull(),
+		"args":       types.ListNull(types.StringType),
+		"env_vars":   types.ListNull(types.StringType),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	mcp, diags := types.ObjectValue(mcpAttrTypes, map[string]attr.Value{
+		"server_label":          types.StringValue("docs"),
+		"transport":             transport,
+		"allowed_tools":         types.ListNull(types.StringType),
+		"connection_origin":     types.StringNull(),
+		"credential_id":         types.StringNull(),
+		"request_metadata_json": jsontypes.NewNormalizedNull(),
+		"required":              types.BoolValue(false),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	tool, diags := types.ObjectValue(toolAttrTypes, map[string]attr.Value{
+		"type":                      types.StringValue("mcp"),
+		"function":                  types.ObjectNull(functionAttrTypes),
+		"programmatic_tool_calling": types.ObjectNull(ptcAttrTypes),
+		"mcp":                       mcp,
+		"web_search":                types.ObjectNull(webSearchAttrTypes),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	list, diags := types.ListValue(types.ObjectType{AttrTypes: toolAttrTypes}, []attr.Value{tool})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	raw, diags := toolsToAPI(ctx, list, true)
+	if diags.HasError() {
+		t.Fatalf("unknown MCP header values must wait until apply, got %v", diags)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("expected no encoded tools while a header value is unknown, got %d", len(raw))
+	}
+	_, diags = toolsToAPI(ctx, list, false)
+	if !diags.HasError() {
+		t.Fatal("apply-time encoding must reject unknown MCP header values")
+	}
+}
+
 func TestToolsToAPIRejectsConflictingVariant(t *testing.T) {
 	ctx := context.Background()
 	fn, diags := types.ObjectValue(functionAttrTypes, map[string]attr.Value{

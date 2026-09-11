@@ -362,6 +362,45 @@ func toolsToAPI(ctx context.Context, list types.List, allowUnknown bool) ([]json
 	return out, diags
 }
 
+func attrHasUnknown(v attr.Value) bool {
+	if v == nil {
+		return false
+	}
+	if v.IsUnknown() {
+		return true
+	}
+	if v.IsNull() {
+		return false
+	}
+	switch c := v.(type) {
+	case types.Map:
+		for _, elem := range c.Elements() {
+			if attrHasUnknown(elem) {
+				return true
+			}
+		}
+	case types.List:
+		for _, elem := range c.Elements() {
+			if attrHasUnknown(elem) {
+				return true
+			}
+		}
+	case types.Set:
+		for _, elem := range c.Elements() {
+			if attrHasUnknown(elem) {
+				return true
+			}
+		}
+	case types.Object:
+		for _, elem := range c.Attributes() {
+			if attrHasUnknown(elem) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func rejectConflictingToolBlocks(typ string, attrs map[string]attr.Value) diag.Diagnostics {
 	var diags diag.Diagnostics
 	blocks := []string{"function", "programmatic_tool_calling", "mcp", "web_search"}
@@ -523,7 +562,7 @@ func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, bool, diag
 		Required            types.Bool           `tfsdk:"required"`
 	}
 	diags.Append(obj.As(ctx, &m, basetypes.ObjectAsOptions{})...)
-	if m.ServerLabel.IsUnknown() || m.Transport.IsUnknown() || m.AllowedTools.IsUnknown() || m.ConnectionOrigin.IsUnknown() || m.CredentialID.IsUnknown() || m.RequestMetadataJSON.IsUnknown() || m.Required.IsUnknown() {
+	if m.ServerLabel.IsUnknown() || m.Transport.IsUnknown() || attrHasUnknown(m.AllowedTools) || m.ConnectionOrigin.IsUnknown() || m.CredentialID.IsUnknown() || m.RequestMetadataJSON.IsUnknown() || m.Required.IsUnknown() {
 		return nil, true, diags
 	}
 	body := map[string]any{"server_label": m.ServerLabel.ValueString()}
@@ -587,7 +626,7 @@ func transportToAPI(ctx context.Context, obj types.Object) (map[string]any, bool
 		EnvVars   types.List   `tfsdk:"env_vars"`
 	}
 	diags.Append(obj.As(ctx, &t, basetypes.ObjectAsOptions{})...)
-	if t.Type.IsUnknown() || t.ServerURL.IsUnknown() || t.Headers.IsUnknown() || t.Command.IsUnknown() || t.Cwd.IsUnknown() || t.Args.IsUnknown() || t.EnvVars.IsUnknown() {
+	if t.Type.IsUnknown() || t.ServerURL.IsUnknown() || t.Command.IsUnknown() || t.Cwd.IsUnknown() || attrHasUnknown(t.Headers) || attrHasUnknown(t.Args) || attrHasUnknown(t.EnvVars) {
 		return nil, true, diags
 	}
 	typ := t.Type.ValueString()
