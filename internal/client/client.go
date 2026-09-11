@@ -134,7 +134,7 @@ func (c *Client) doJSON(ctx context.Context, method, rawURL, operation, resource
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return newAPIError(operation, resource, id, 0, "", sanitizeErrorMessage(err.Error()))
+		return fmt.Errorf("%s %s: %w", operation, resource, err)
 	}
 	defer resp.Body.Close()
 

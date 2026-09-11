@@ -186,21 +186,23 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 	diags.Append(d...)
 	out.Metadata = mv
 
-	if prior.ServiceTier.IsNull() || prior.ServiceTier.IsUnknown() {
-		out.ServiceTier = types.StringNull()
-	} else {
+	if agent.ServiceTier != "" {
 		out.ServiceTier = types.StringValue(agent.ServiceTier)
+	} else {
+		out.ServiceTier = types.StringNull()
 	}
 
 	if prior.Reasoning.IsNull() || prior.Reasoning.IsUnknown() {
-		out.Reasoning = types.ObjectNull(map[string]attr.Type{"effort": types.StringType, "summary": types.StringType})
+		out.Reasoning = types.ObjectNull(reasoningAttrTypes)
 	} else if agent.Reasoning != nil {
-		obj, d := types.ObjectValueFrom(ctx, map[string]attr.Type{"effort": types.StringType, "summary": types.StringType}, reasoningModel{
+		obj, d := types.ObjectValueFrom(ctx, reasoningAttrTypes, reasoningModel{
 			Effort:  stringPtrValue(agent.Reasoning.Effort),
 			Summary: stringPtrValue(agent.Reasoning.Summary),
 		})
 		diags.Append(d...)
 		out.Reasoning = obj
+	} else {
+		out.Reasoning = types.ObjectNull(reasoningAttrTypes)
 	}
 
 	if prior.Text.IsNull() || prior.Text.IsUnknown() {
@@ -209,6 +211,8 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		obj, d := textToObject(ctx, *agent.Text)
 		diags.Append(d...)
 		out.Text = obj
+	} else {
+		out.Text = types.ObjectNull(textAttrTypes)
 	}
 
 	if prior.MultiAgent.IsNull() || prior.MultiAgent.IsUnknown() {
@@ -217,12 +221,16 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		mm := multiAgentModel{Enabled: types.BoolValue(agent.MultiAgent.Enabled)}
 		if agent.MultiAgent.MaxConcurrentSubagents != nil {
 			mm.MaxConcurrentSubagents = types.Int64Value(*agent.MultiAgent.MaxConcurrentSubagents)
+		} else if agent.MultiAgent.Enabled {
+			mm.MaxConcurrentSubagents = types.Int64Value(6)
 		} else {
 			mm.MaxConcurrentSubagents = types.Int64Null()
 		}
 		obj, d := types.ObjectValueFrom(ctx, multiAgentAttrTypes, mm)
 		diags.Append(d...)
 		out.MultiAgent = obj
+	} else {
+		out.MultiAgent = types.ObjectNull(multiAgentAttrTypes)
 	}
 
 	tools, d := toolsFromAPI(ctx, agent.Tools)
@@ -282,14 +290,24 @@ func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.D
 	if list.IsNull() {
 		return []json.RawMessage{}, nil
 	}
-	var elems []types.Object
-	diags.Append(list.ElementsAs(ctx, &elems, false)...)
+	elems := list.Elements()
 	out := make([]json.RawMessage, 0, len(elems))
 	for i, elem := range elems {
-		raw, d := toolToAPI(ctx, elem)
+		if elem == nil || elem.IsNull() {
+			diags.AddError("Invalid tools", fmt.Sprintf("tools[%d] must not be null", i))
+			continue
+		}
+		if elem.IsUnknown() {
+			continue
+		}
+		obj, ok := elem.(types.Object)
+		if !ok {
+			diags.AddError("Invalid tools", fmt.Sprintf("tools[%d] must be an object", i))
+			continue
+		}
+		raw, d := toolToAPI(ctx, obj)
 		diags.Append(d...)
-		if d.HasError() {
-			diags.AddError("Invalid tool", fmt.Sprintf("tools[%d] could not be encoded", i))
+		if d.HasError() || len(raw) == 0 {
 			continue
 		}
 		out = append(out, raw)
@@ -300,14 +318,45 @@ func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.D
 	return out, diags
 }
 
+func objectAttr(attrs map[string]attr.Value, name string) (types.Object, bool) {
+	v, ok := attrs[name]
+	if !ok || v == nil {
+		return types.ObjectNull(map[string]attr.Type{}), false
+	}
+	obj, ok := v.(types.Object)
+	return obj, ok
+}
+
+func stringAttr(attrs map[string]attr.Value, name string) (types.String, bool) {
+	v, ok := attrs[name]
+	if !ok || v == nil {
+		return types.StringNull(), false
+	}
+	s, ok := v.(types.String)
+	return s, ok
+}
+
 func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	if obj.IsNull() {
+		diags.AddError("Invalid tool", "tool object must not be null")
+		return nil, diags
+	}
 	attrs := obj.Attributes()
-	typ := attrs["type"].(types.String).ValueString()
+	typeVal, ok := stringAttr(attrs, "type")
+	if !ok {
+		diags.AddError("Invalid tool", "tool type is required")
+		return nil, diags
+	}
+	if typeVal.IsUnknown() {
+		return nil, diags
+	}
+	typ := typeVal.ValueString()
 	body := map[string]any{"type": typ}
 	switch typ {
 	case "function":
-		if attrs["function"].(types.Object).IsNull() {
+		fn, ok := objectAttr(attrs, "function")
+		if !ok || fn.IsNull() {
 			diags.AddError("Invalid function tool", "function block is required when type is function")
 			return nil, diags
 		}
@@ -317,7 +366,7 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 			ParametersJSON jsontypes.Normalized `tfsdk:"parameters_json"`
 			DeferLoading   types.Bool           `tfsdk:"defer_loading"`
 		}
-		diags.Append(attrs["function"].(types.Object).As(ctx, &fm, basetypes.ObjectAsOptions{})...)
+		diags.Append(fn.As(ctx, &fm, basetypes.ObjectAsOptions{})...)
 		canon, err := client.CanonicalJSON(fm.ParametersJSON.ValueString())
 		if err != nil {
 			diags.AddError("Invalid function parameters_json", err.Error())
@@ -326,26 +375,35 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 		body["name"] = fm.Name.ValueString()
 		body["description"] = fm.Description.ValueString()
 		var params any
-		_ = json.Unmarshal([]byte(canon), &params)
+		if err := json.Unmarshal([]byte(canon), &params); err != nil {
+			diags.AddError("Invalid function parameters_json", err.Error())
+			return nil, diags
+		}
 		body["parameters"] = params
-		if !fm.DeferLoading.IsNull() {
+		if fm.DeferLoading.IsNull() {
+			body["defer_loading"] = false
+		} else {
 			body["defer_loading"] = fm.DeferLoading.ValueBool()
 		}
 	case "tool_search":
 	case "programmatic_tool_calling":
-		ptc := attrs["programmatic_tool_calling"].(types.Object)
-		if !ptc.IsNull() && !ptc.IsUnknown() {
+		ptc, ok := objectAttr(attrs, "programmatic_tool_calling")
+		if ok && !ptc.IsNull() && !ptc.IsUnknown() {
 			var pm struct {
 				Enabled types.Bool `tfsdk:"enabled"`
 			}
 			diags.Append(ptc.As(ctx, &pm, basetypes.ObjectAsOptions{})...)
-			if !pm.Enabled.IsNull() {
+			if pm.Enabled.IsNull() {
+				body["enabled"] = true
+			} else {
 				body["enabled"] = pm.Enabled.ValueBool()
 			}
+		} else {
+			body["enabled"] = true
 		}
 	case "mcp":
-		mcpObj := attrs["mcp"].(types.Object)
-		if mcpObj.IsNull() {
+		mcpObj, ok := objectAttr(attrs, "mcp")
+		if !ok || mcpObj.IsNull() {
 			diags.AddError("Invalid mcp tool", "mcp block is required when type is mcp")
 			return nil, diags
 		}
@@ -355,14 +413,17 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 			body[k] = v
 		}
 	case "web_search":
-		ws := attrs["web_search"].(types.Object)
-		if !ws.IsNull() && !ws.IsUnknown() {
+		ws, ok := objectAttr(attrs, "web_search")
+		if ok && !ws.IsNull() && !ws.IsUnknown() {
 			wsBody, d := webSearchToAPI(ctx, ws)
 			diags.Append(d...)
 			for k, v := range wsBody {
 				body[k] = v
 			}
 		}
+	case "":
+		diags.AddError("Invalid tool", "tool type is required")
+		return nil, diags
 	default:
 		diags.AddError("Unsupported tool type", fmt.Sprintf("unsupported tool type %q; supported: function, tool_search, programmatic_tool_calling, mcp, web_search", typ))
 		return nil, diags
@@ -409,12 +470,17 @@ func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagn
 		canon, err := client.CanonicalJSON(m.RequestMetadataJSON.ValueString())
 		if err != nil {
 			diags.AddError("Invalid request_metadata_json", err.Error())
+		} else if err := json.Unmarshal([]byte(canon), &meta); err != nil {
+			diags.AddError("Invalid request_metadata_json", err.Error())
+		} else if err := client.ScanSecretsInJSON([]byte(canon)); err != nil {
+			diags.AddError("Invalid request_metadata_json", err.Error())
 		} else {
-			_ = json.Unmarshal([]byte(canon), &meta)
 			body["request_metadata"] = meta
 		}
 	}
-	if !m.Required.IsNull() {
+	if m.Required.IsNull() {
+		body["required"] = false
+	} else {
 		body["required"] = m.Required.ValueBool()
 	}
 	return body, diags
@@ -513,10 +579,17 @@ func toolsFromAPI(ctx context.Context, tools []json.RawMessage) (types.List, dia
 		tools = []json.RawMessage{}
 	}
 	elems := make([]attr.Value, 0, len(tools))
-	for _, raw := range tools {
+	for i, raw := range tools {
 		obj, d := toolFromAPI(ctx, raw)
 		diags.Append(d...)
+		if d.HasError() {
+			diags.AddError("Invalid tools", fmt.Sprintf("tools[%d] from API could not be decoded", i))
+			continue
+		}
 		elems = append(elems, obj)
+	}
+	if err := client.ValidatePersistedTools(tools); err != nil {
+		diags.AddError("Invalid tools from API", err.Error())
 	}
 	list, d := types.ListValue(types.ObjectType{AttrTypes: toolAttrTypes}, elems)
 	diags.Append(d...)
@@ -565,7 +638,7 @@ func toolFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, diag.D
 	return obj, diags
 }
 
-func functionFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, diag.Diagnostics) {
+func functionFromAPI(_ context.Context, raw json.RawMessage) (types.Object, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	var api struct {
 		Name         string          `json:"name"`
@@ -586,7 +659,7 @@ func functionFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, di
 		"name":            types.StringValue(api.Name),
 		"description":     types.StringValue(api.Description),
 		"parameters_json": jsontypes.NewNormalizedValue(canon),
-		"defer_loading":   types.BoolNull(),
+		"defer_loading":   types.BoolValue(false),
 	}
 	if api.DeferLoading != nil {
 		fm["defer_loading"] = types.BoolValue(*api.DeferLoading)
@@ -601,8 +674,11 @@ func ptcFromAPI(_ context.Context, raw json.RawMessage) (types.Object, diag.Diag
 	var api struct {
 		Enabled *bool `json:"enabled"`
 	}
-	_ = json.Unmarshal(raw, &api)
-	vals := map[string]attr.Value{"enabled": types.BoolNull()}
+	if err := json.Unmarshal(raw, &api); err != nil {
+		diags.AddError("Invalid programmatic_tool_calling tool", err.Error())
+		return types.ObjectNull(ptcAttrTypes), diags
+	}
+	vals := map[string]attr.Value{"enabled": types.BoolValue(true)}
 	if api.Enabled != nil {
 		vals["enabled"] = types.BoolValue(*api.Enabled)
 	}
@@ -631,7 +707,9 @@ func mcpFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, diag.Di
 	allowed := types.ListNull(types.StringType)
 	if len(api.AllowedTools) > 0 && string(api.AllowedTools) != "null" {
 		var tools []string
-		_ = json.Unmarshal(api.AllowedTools, &tools)
+		if err := json.Unmarshal(api.AllowedTools, &tools); err != nil {
+			diags.AddError("Invalid mcp allowed_tools", err.Error())
+		}
 		if tools == nil {
 			tools = []string{}
 		}
@@ -641,8 +719,13 @@ func mcpFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, diag.Di
 	}
 	reqMeta := jsontypes.NewNormalizedNull()
 	if len(api.RequestMetadata) > 0 && string(api.RequestMetadata) != "null" {
+		if err := client.ScanSecretsInJSON(api.RequestMetadata); err != nil {
+			diags.AddError("Invalid mcp request_metadata from API", err.Error())
+		}
 		canon, err := client.CanonicalJSON(string(api.RequestMetadata))
-		if err == nil {
+		if err != nil {
+			diags.AddError("Invalid mcp request_metadata from API", err.Error())
+		} else {
 			reqMeta = jsontypes.NewNormalizedValue(canon)
 		}
 	}
@@ -653,7 +736,7 @@ func mcpFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, diag.Di
 		"connection_origin":     stringPtrValue(api.ConnectionOrigin),
 		"credential_id":         stringPtrValue(api.CredentialID),
 		"request_metadata_json": reqMeta,
-		"required":              types.BoolNull(),
+		"required":              types.BoolValue(false),
 	}
 	if api.Required != nil {
 		vals["required"] = types.BoolValue(*api.Required)
@@ -674,7 +757,10 @@ func transportFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, d
 		Args      []string          `json:"args"`
 		EnvVars   []string          `json:"env_vars"`
 	}
-	_ = json.Unmarshal(raw, &api)
+	if err := json.Unmarshal(raw, &api); err != nil {
+		diags.AddError("Invalid mcp transport", err.Error())
+		return types.ObjectNull(transportAttrTypes), diags
+	}
 	headers := types.MapNull(types.StringType)
 	if api.Headers != nil {
 		mv, d := types.MapValueFrom(ctx, types.StringType, api.Headers)
@@ -720,7 +806,10 @@ func webSearchFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, d
 			Timezone *string `json:"timezone"`
 		} `json:"location"`
 	}
-	_ = json.Unmarshal(raw, &api)
+	if err := json.Unmarshal(raw, &api); err != nil {
+		diags.AddError("Invalid web_search tool", err.Error())
+		return types.ObjectNull(webSearchAttrTypes), diags
+	}
 	domains := types.ListNull(types.StringType)
 	if api.AllowedDomains != nil {
 		lv, d := types.ListValueFrom(ctx, types.StringType, api.AllowedDomains)

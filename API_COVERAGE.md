@@ -83,7 +83,11 @@ Delete removes the vault and its credentials remotely. The provider does not enu
 | `auth.access_token` | `access_token` write-only | OAuth |
 | `auth.expires_at` | `expires_at` | Null on rotation clears stored expiry |
 | `auth.refresh` | `refresh` | Stores obtained grant material only |
+| `auth.refresh.scope` | `refresh.scope` | Sent on create/update; not interactive OAuth |
+| `auth.refresh.resource` | `refresh.resource` | Sent on create/update; not interactive OAuth |
 | refresh/client secrets | write-only | Never in state |
+
+`expires_at`, `refresh.scope`, and `refresh.resource` are sent on update even when `token_revision` is unchanged. Secret rotation still requires incrementing `token_revision` together with the replacement secret. A true no-op apply (no secret, expiry, or refresh change) does not call the API.
 
 A no-op apply does not rotate. Changing revision without the replacement secret fails with a diagnostic.
 

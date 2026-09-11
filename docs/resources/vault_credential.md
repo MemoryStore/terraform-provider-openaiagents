@@ -65,6 +65,8 @@ Required:
 Optional:
 
 - `refresh_token` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) OAuth refresh token. Write-only.
+- `resource` (String) OAuth resource indicator sent on refresh. Changing this updates the stored grant through the credential update API.
+- `scope` (String) OAuth scope sent on refresh. Changing this updates the stored grant through the credential update API.
 - `token_endpoint_auth` (Attributes) Token endpoint authentication. (see [below for nested schema](#nestedatt--refresh--token_endpoint_auth))
 
 <a id="nestedatt--refresh--token_endpoint_auth"></a>

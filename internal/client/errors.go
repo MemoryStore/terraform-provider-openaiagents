@@ -65,25 +65,8 @@ func newAPIError(operation, resource, id string, status int, requestID, message 
 }
 
 func sanitizeErrorMessage(message string) string {
-	message = strings.TrimSpace(message)
-	if message == "" {
-		return ""
-	}
-	lower := strings.ToLower(message)
-	for _, needle := range []string{
-		"bearer ",
-		"sk-",
-		"authorization",
-		"client_secret",
-		"refresh_token",
-		"access_token",
-	} {
-		if strings.Contains(lower, needle) {
-			return "API request failed"
-		}
-	}
-	if len(message) > 300 {
-		return message[:300]
-	}
-	return message
+	// Never forward remote bodies. They can echo tokens, setup-command
+	// bodies, or archive fragments. Callers still see HTTP status and request_id.
+	_ = message
+	return "API request failed"
 }

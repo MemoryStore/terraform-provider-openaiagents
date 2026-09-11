@@ -16,6 +16,7 @@ import (
 func TestAccVaultAndCredential(t *testing.T) {
 	fake := testFake
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -135,6 +136,7 @@ func testVaultCredentialImportID(s *terraform.State) (string, error) {
 
 func TestAccVaultCredentialMalformedImport(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -162,6 +164,7 @@ resource "openaiagents_vault_credential" "test" {
 
 func TestAccVaultCredentialOAuth(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -204,6 +207,7 @@ func TestAccAdminKeyNotForwarded(t *testing.T) {
 	fake := testFake
 	t.Setenv("OPENAI_ADMIN_KEY", "ADMIN_CANARY_DO_NOT_SEND")
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

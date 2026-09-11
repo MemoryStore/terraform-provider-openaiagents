@@ -16,7 +16,7 @@ fmt:
 	gofmt -s -w -e .
 
 test:
-	env -u OPENAI_API_KEY go test -v -cover -timeout=120s -parallel=10 ./...
+	env -u OPENAI_API_KEY TF_ACC=1 go test -v -cover -timeout=120s -parallel=10 ./...
 
 testacc:
 	@echo "Default tests are offline (fake API). Live acceptance is OPENAIAGENTS_ACC_LIVE=1 and is not invoked here."

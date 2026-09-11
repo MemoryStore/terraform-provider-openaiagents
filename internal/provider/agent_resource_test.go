@@ -16,6 +16,7 @@ import (
 func TestAccAgentResourceLifecycle(t *testing.T) {
 	fake := testFake
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -62,10 +63,9 @@ resource "openaiagents_agent" "test" {
 				},
 			},
 			{
-				ResourceName:            "openaiagents_agent.test",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"service_tier", "reasoning", "text", "multi_agent"},
+				ResourceName:      "openaiagents_agent.test",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 			{
 				Config: testConfig() + `
@@ -86,6 +86,7 @@ func TestAccAgentResourceExternalDelete(t *testing.T) {
 	fake := testFake
 	var id string
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -113,6 +114,7 @@ resource "openaiagents_agent" "test" {
 
 func TestAccAgentResourceTools(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -203,6 +205,7 @@ resource "openaiagents_agent" "test" {
 
 func TestAccAgentResourceRejectsInlineAuth(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -234,6 +237,7 @@ resource "openaiagents_agent" "test" {
 
 func TestAccAgentResourceMalformedImport(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{
@@ -255,6 +259,7 @@ resource "openaiagents_agent" "test" {
 
 func TestAccAgentDataSourceMissing(t *testing.T) {
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

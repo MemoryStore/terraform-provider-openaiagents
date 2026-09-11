@@ -254,6 +254,7 @@ func (s *Server) createAgent(w http.ResponseWriter, body []byte) {
 		Tools:       []json.RawMessage{},
 	}}
 	applyAgent(rec, raw, true)
+	normalizeAgent(rec)
 	s.mu.Lock()
 	s.agents[rec.ID] = rec
 	s.mu.Unlock()
@@ -285,6 +286,7 @@ func (s *Server) updateAgent(w http.ResponseWriter, id string, body []byte) {
 		return
 	}
 	applyAgent(rec, raw, false)
+	normalizeAgent(rec)
 	rec.UpdatedAt = time.Now().Unix()
 	writeJSON(w, http.StatusOK, rec.Agent)
 }
@@ -353,6 +355,54 @@ func applyAgent(rec *agentRecord, raw map[string]any, create bool) {
 			rec.Tools = tools
 		}
 	}
+}
+
+func normalizeAgent(rec *agentRecord) {
+	if rec.ServiceTier == "" {
+		rec.ServiceTier = "auto"
+	}
+	if rec.MultiAgent == nil {
+		rec.MultiAgent = &client.MultiAgent{Enabled: false}
+	}
+	if rec.MultiAgent.Enabled && rec.MultiAgent.MaxConcurrentSubagents == nil {
+		six := int64(6)
+		rec.MultiAgent.MaxConcurrentSubagents = &six
+	}
+	if rec.Metadata == nil {
+		rec.Metadata = map[string]string{}
+	}
+	out := make([]json.RawMessage, 0, len(rec.Tools))
+	for _, raw := range rec.Tools {
+		out = append(out, normalizeTool(raw))
+	}
+	rec.Tools = out
+}
+
+func normalizeTool(raw json.RawMessage) json.RawMessage {
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return raw
+	}
+	typ, _ := obj["type"].(string)
+	switch typ {
+	case "function":
+		if _, ok := obj["defer_loading"]; !ok {
+			obj["defer_loading"] = false
+		}
+	case "programmatic_tool_calling":
+		if _, ok := obj["enabled"]; !ok {
+			obj["enabled"] = true
+		}
+	case "mcp":
+		if _, ok := obj["required"]; !ok {
+			obj["required"] = false
+		}
+	}
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return raw
+	}
+	return b
 }
 
 func (s *Server) createTemplate(w http.ResponseWriter, body []byte) {
@@ -821,6 +871,38 @@ func (s *Server) Agent(id string) (client.Agent, bool) {
 func (s *Server) DeleteAgent(id string) {
 	s.mu.Lock()
 	delete(s.agents, id)
+	s.mu.Unlock()
+}
+
+// SetAgentName mutates a stored agent name, simulating external drift.
+func (s *Server) SetAgentName(id, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if rec, ok := s.agents[id]; ok {
+		n := name
+		rec.Name = &n
+	}
+}
+
+// SetTemplateName mutates a stored template name, simulating external drift.
+func (s *Server) SetTemplateName(id, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if rec, ok := s.templates[id]; ok {
+		n := name
+		rec.Public.Name = &n
+	}
+}
+
+// DeleteVault simulates an external vault deletion, cascading credentials.
+func (s *Server) DeleteVault(id string) {
+	s.mu.Lock()
+	delete(s.vaults, id)
+	for cid, cred := range s.credentials {
+		if cred.VaultID == id {
+			delete(s.credentials, cid)
+		}
+	}
 	s.mu.Unlock()
 }
 

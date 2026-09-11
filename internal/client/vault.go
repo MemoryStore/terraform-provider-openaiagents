@@ -164,6 +164,12 @@ func oauthRefreshMap(refresh OAuthRefreshWrite) map[string]any {
 	if refresh.RefreshToken != "" {
 		body["refresh_token"] = refresh.RefreshToken
 	}
+	if refresh.Scope != "" {
+		body["scope"] = refresh.Scope
+	}
+	if refresh.Resource != "" {
+		body["resource"] = refresh.Resource
+	}
 	if refresh.TokenEndpointAuth != nil {
 		auth := map[string]any{"type": refresh.TokenEndpointAuth.Type}
 		if refresh.TokenEndpointAuth.ClientSecret != "" {

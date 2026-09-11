@@ -34,7 +34,7 @@ resource "openaiagents_agent" "minimal" {
 - `multi_agent` (Attributes) Subagent configuration. Removing the block sends JSON null so multi-agent behavior is disabled. (see [below for nested schema](#nestedatt--multi_agent))
 - `name` (String) Human-readable name. Removing this attribute sends JSON null so the API clears it.
 - `reasoning` (Attributes) Reasoning configuration. Removing the block sends JSON null. (see [below for nested schema](#nestedatt--reasoning))
-- `service_tier` (String) Service tier: `auto`, `default`, `flex`, `priority`, or `fast`. Omitted on create so the API default applies.
+- `service_tier` (String) Service tier: `auto`, `default`, `flex`, `priority`, or `fast`. Defaults to the API value `auto`.
 - `text` (Attributes) Text output configuration. Removing the block sends JSON null. (see [below for nested schema](#nestedatt--text))
 - `tools` (Attributes List) Persisted tool union. Supported types: `function`, `tool_search`, `programmatic_tool_calling`, `mcp`, `web_search`. Unsupported types are rejected. MCP inline authorization is rejected. (see [below for nested schema](#nestedatt--tools))
 
@@ -112,7 +112,7 @@ Required:
 
 Optional:
 
-- `defer_loading` (Boolean) Whether the function is deferred and discovered through tool search.
+- `defer_loading` (Boolean) Whether the function is deferred and discovered through tool search. Defaults to false.
 
 
 <a id="nestedatt--tools--mcp"></a>
@@ -129,7 +129,7 @@ Optional:
 - `connection_origin` (String) `service` (OpenAI network) or `environment` (session environment).
 - `credential_id` (String) Vault credential selected for this MCP server.
 - `request_metadata_json` (String) Metadata included with requests to this MCP server, as a JSON object string.
-- `required` (Boolean) Whether this MCP server must initialize before the first turn.
+- `required` (Boolean) Whether this MCP server must initialize before the first turn. Defaults to false.
 
 <a id="nestedatt--tools--mcp--transport"></a>
 ### Nested Schema for `tools.mcp.transport`

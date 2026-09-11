@@ -54,7 +54,7 @@ provider_installation {
 Then `terraform plan` / `apply` against a configuration that sets `OPENAI_API_KEY` in the environment.
 
 ```shell
-make test      # offline unit and fake-API lifecycle tests
+make test      # offline unit tests and fake-API Terraform lifecycle tests (sets TF_ACC=1, never contacts api.openai.com)
 make generate  # docs from schema
 ```
 

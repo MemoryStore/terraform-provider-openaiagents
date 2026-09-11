@@ -96,6 +96,15 @@ func TestValidatePersistedToolsRejectsUnknownAndSecrets(t *testing.T) {
 	}
 }
 
+func TestRejectExpandedSecretHeaders(t *testing.T) {
+	for _, h := range []string{"X-Api-Token", "Api-Key", "X-Goog-Api-Key"} {
+		err := client.ValidatePersistedTools([]json.RawMessage{[]byte(`{"type":"mcp","server_label":"x","transport":{"type":"http","server_url":"https://x","headers":{"` + h + `":"secret"}}}`)})
+		if err == nil {
+			t.Fatalf("expected rejection for header %s", h)
+		}
+	}
+}
+
 func TestCanonicalJSONPreservesFalseBoolean(t *testing.T) {
 	got, err := client.CanonicalJSON(`{"type":"object","additionalProperties":false,"properties":{"id":{"type":"string"}}}`)
 	if err != nil {

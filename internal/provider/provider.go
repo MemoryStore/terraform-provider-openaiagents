@@ -77,11 +77,7 @@ func (p *OpenAIAgentsProvider) Configure(ctx context.Context, req provider.Confi
 		return
 	}
 
-	apiKey, err := resolveExplicitOrEnv(data.APIKey, clientAPIKeyEnv)
-	if err != nil {
-		resp.Diagnostics.AddError("Invalid API key", err.Error())
-		return
-	}
+	apiKey := resolveExplicitOrEnv(data.APIKey, clientAPIKeyEnv)
 	if apiKey == "" {
 		resp.Diagnostics.AddError(
 			"Missing API key",
@@ -90,12 +86,12 @@ func (p *OpenAIAgentsProvider) Configure(ctx context.Context, req provider.Confi
 		return
 	}
 
-	organization, _ := resolveExplicitOrEnv(data.Organization, "OPENAI_ORG_ID")
+	organization := resolveExplicitOrEnv(data.Organization, "OPENAI_ORG_ID")
 	if organization == "" {
-		organization, _ = resolveExplicitOrEnv(data.Organization, "OPENAI_ORGANIZATION")
+		organization = resolveExplicitOrEnv(data.Organization, "OPENAI_ORGANIZATION")
 	}
-	project, _ := resolveExplicitOrEnv(data.Project, "OPENAI_PROJECT")
-	baseURL, _ := resolveExplicitOrEnv(data.BaseURL, "OPENAI_BASE_URL")
+	project := resolveExplicitOrEnv(data.Project, "OPENAI_PROJECT")
+	baseURL := resolveExplicitOrEnv(data.BaseURL, "OPENAI_BASE_URL")
 
 	c, err := client.New(client.Options{
 		APIKey:          apiKey,
@@ -153,12 +149,12 @@ func newTestProvider(version string) func() provider.Provider {
 
 const clientAPIKeyEnv = "OPENAI_API_KEY"
 
-func resolveExplicitOrEnv(value types.String, envName string) (string, error) {
+func resolveExplicitOrEnv(value types.String, envName string) string {
 	if value.IsUnknown() {
-		return "", nil
+		return ""
 	}
 	if !value.IsNull() {
-		return value.ValueString(), nil
+		return value.ValueString()
 	}
-	return os.Getenv(envName), nil
+	return os.Getenv(envName)
 }

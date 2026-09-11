@@ -51,6 +51,8 @@ type oauthRefreshModel struct {
 	TokenEndpoint     types.String `tfsdk:"token_endpoint"`
 	ClientID          types.String `tfsdk:"client_id"`
 	RefreshToken      types.String `tfsdk:"refresh_token"`
+	Scope             types.String `tfsdk:"scope"`
+	Resource          types.String `tfsdk:"resource"`
 	TokenEndpointAuth types.Object `tfsdk:"token_endpoint_auth"`
 }
 
@@ -68,6 +70,8 @@ var refreshAttrTypes = map[string]attr.Type{
 	"token_endpoint":      types.StringType,
 	"client_id":           types.StringType,
 	"refresh_token":       types.StringType,
+	"scope":               types.StringType,
+	"resource":            types.StringType,
 	"token_endpoint_auth": types.ObjectType{AttrTypes: tokenEndpointAuthAttrTypes},
 }
 
@@ -124,6 +128,8 @@ func (r *VaultCredentialResource) Schema(_ context.Context, _ resource.SchemaReq
 					"token_endpoint": schema.StringAttribute{Required: true, MarkdownDescription: "Token endpoint URL.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 					"client_id":      schema.StringAttribute{Required: true, MarkdownDescription: "OAuth client ID.", PlanModifiers: []planmodifier.String{stringplanmodifier.RequiresReplace()}},
 					"refresh_token":  schema.StringAttribute{Optional: true, WriteOnly: true, Sensitive: true, MarkdownDescription: "OAuth refresh token. Write-only."},
+					"scope":          schema.StringAttribute{Optional: true, MarkdownDescription: "OAuth scope sent on refresh. Changing this updates the stored grant through the credential update API."},
+					"resource":       schema.StringAttribute{Optional: true, MarkdownDescription: "OAuth resource indicator sent on refresh. Changing this updates the stored grant through the credential update API."},
 					"token_endpoint_auth": schema.SingleNestedAttribute{
 						Optional:            true,
 						MarkdownDescription: "Token endpoint authentication.",
@@ -154,7 +160,7 @@ func (r *VaultCredentialResource) Create(ctx context.Context, req resource.Creat
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	auth, d := credentialAuthFromConfig(ctx, plan, config, true)
+	auth, d := credentialAuthFromConfig(ctx, plan, config)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -199,7 +205,7 @@ func (r *VaultCredentialResource) Update(ctx context.Context, req resource.Updat
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !revisionChanged(plan.TokenRevision, state.TokenRevision) {
+	if !credentialNeedsRemoteUpdate(plan, state) {
 		next := credentialToState(plan, &client.Credential{
 			ID:           state.ID.ValueString(),
 			Object:       state.Object.ValueString(),
@@ -215,7 +221,7 @@ func (r *VaultCredentialResource) Update(ctx context.Context, req resource.Updat
 		resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 		return
 	}
-	rotate, d := credentialRotateFromConfig(ctx, plan, config)
+	rotate, d := credentialRotateFromConfig(ctx, plan, config, state)
 	resp.Diagnostics.Append(d...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -250,7 +256,20 @@ func (r *VaultCredentialResource) ImportState(ctx context.Context, req resource.
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), credID)...)
 }
 
-func credentialAuthFromConfig(ctx context.Context, plan, config vaultCredentialModel, create bool) (client.CredentialAuthWrite, diag.Diagnostics) {
+func credentialNeedsRemoteUpdate(plan, state vaultCredentialModel) bool {
+	if revisionChanged(plan.TokenRevision, state.TokenRevision) {
+		return true
+	}
+	if !plan.ExpiresAt.Equal(state.ExpiresAt) {
+		return true
+	}
+	if !plan.Refresh.Equal(state.Refresh) {
+		return true
+	}
+	return false
+}
+
+func credentialAuthFromConfig(ctx context.Context, plan, config vaultCredentialModel) (client.CredentialAuthWrite, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	auth := client.CredentialAuthWrite{
 		Type:         plan.AuthType.ValueString(),
@@ -283,22 +302,29 @@ func credentialAuthFromConfig(ctx context.Context, plan, config vaultCredentialM
 	return auth, diags
 }
 
-func credentialRotateFromConfig(ctx context.Context, plan, config vaultCredentialModel) (client.CredentialRotate, diag.Diagnostics) {
+func credentialRotateFromConfig(ctx context.Context, plan, config, state vaultCredentialModel) (client.CredentialRotate, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	rotate := client.CredentialRotate{AuthType: plan.AuthType.ValueString()}
+	secretRotated := revisionChanged(plan.TokenRevision, state.TokenRevision)
 	switch plan.AuthType.ValueString() {
 	case "static_bearer":
-		if config.Token.IsNull() || config.Token.ValueString() == "" {
-			diags.AddError("Missing token", "token_revision changed but token was not provided in configuration")
-			return rotate, diags
+		if secretRotated {
+			if config.Token.IsNull() || config.Token.ValueString() == "" {
+				diags.AddError("Missing token", "token_revision changed but token was not provided in configuration")
+				return rotate, diags
+			}
+			rotate.Token = client.Set(config.Token.ValueString())
 		}
-		rotate.Token = client.Set(config.Token.ValueString())
 	case "mcp_oauth":
-		if config.AccessToken.IsNull() || config.AccessToken.ValueString() == "" {
-			diags.AddError("Missing access_token", "token_revision changed but access_token was not provided in configuration")
-			return rotate, diags
+		if secretRotated {
+			if config.AccessToken.IsNull() || config.AccessToken.ValueString() == "" {
+				diags.AddError("Missing access_token", "token_revision changed but access_token was not provided in configuration")
+				return rotate, diags
+			}
+			rotate.AccessToken = client.Set(config.AccessToken.ValueString())
+		} else if !config.AccessToken.IsNull() && config.AccessToken.ValueString() != "" {
+			rotate.AccessToken = client.Set(config.AccessToken.ValueString())
 		}
-		rotate.AccessToken = client.Set(config.AccessToken.ValueString())
 		if plan.ExpiresAt.IsNull() {
 			rotate.ExpiresAt = client.Null[string]()
 		} else {
@@ -306,6 +332,10 @@ func credentialRotateFromConfig(ctx context.Context, plan, config vaultCredentia
 		}
 		if !config.Refresh.IsNull() && !config.Refresh.IsUnknown() {
 			refresh, d := refreshFromConfig(ctx, config.Refresh)
+			diags.Append(d...)
+			rotate.Refresh = client.Set(refresh)
+		} else if !plan.Refresh.IsNull() && !plan.Refresh.IsUnknown() {
+			refresh, d := refreshFromConfig(ctx, plan.Refresh)
 			diags.Append(d...)
 			rotate.Refresh = client.Set(refresh)
 		}
@@ -321,6 +351,8 @@ func refreshFromConfig(ctx context.Context, obj types.Object) (client.OAuthRefre
 		TokenEndpoint: rm.TokenEndpoint.ValueString(),
 		ClientID:      rm.ClientID.ValueString(),
 		RefreshToken:  rm.RefreshToken.ValueString(),
+		Scope:         rm.Scope.ValueString(),
+		Resource:      rm.Resource.ValueString(),
 	}
 	if !rm.TokenEndpointAuth.IsNull() && !rm.TokenEndpointAuth.IsUnknown() {
 		var tea tokenEndpointAuthModel
@@ -363,14 +395,24 @@ func stripRefreshSecrets(obj types.Object) types.Object {
 	if attrs == nil {
 		return types.ObjectNull(refreshAttrTypes)
 	}
-	attrs["refresh_token"] = types.StringNull()
-	if tea, ok := attrs["token_endpoint_auth"].(types.Object); ok && !tea.IsNull() {
+	out := map[string]attr.Value{}
+	for k, v := range attrs {
+		out[k] = v
+	}
+	out["refresh_token"] = types.StringNull()
+	if _, ok := out["scope"]; !ok {
+		out["scope"] = types.StringNull()
+	}
+	if _, ok := out["resource"]; !ok {
+		out["resource"] = types.StringNull()
+	}
+	if tea, ok := out["token_endpoint_auth"].(types.Object); ok && !tea.IsNull() {
 		teaAttrs := tea.Attributes()
 		teaAttrs["client_secret"] = types.StringNull()
 		n, _ := types.ObjectValue(tokenEndpointAuthAttrTypes, teaAttrs)
-		attrs["token_endpoint_auth"] = n
+		out["token_endpoint_auth"] = n
 	}
-	n, _ := types.ObjectValue(refreshAttrTypes, attrs)
+	n, _ := types.ObjectValue(refreshAttrTypes, out)
 	return n
 }
 

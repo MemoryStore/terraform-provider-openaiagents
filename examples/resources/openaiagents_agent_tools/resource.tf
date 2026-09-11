@@ -1,3 +1,16 @@
+resource "openaiagents_vault" "docs" {
+  name = "docs-mcp"
+}
+
+resource "openaiagents_vault_credential" "docs" {
+  vault_id       = openaiagents_vault.docs.id
+  name           = "docs-mcp"
+  auth_type      = "static_bearer"
+  mcp_server_url = "https://developers.openai.com/mcp"
+  token          = "example-token"
+  token_revision = 1
+}
+
 resource "openaiagents_agent" "tools" {
   model        = "gpt-6-astra"
   name         = "researcher"

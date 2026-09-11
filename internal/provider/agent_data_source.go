@@ -5,6 +5,7 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
@@ -39,6 +40,7 @@ func (d *AgentDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, 
 			"name":         schema.StringAttribute{Computed: true, MarkdownDescription: "Agent name."},
 			"metadata":     schema.MapAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: "Metadata map."},
 			"service_tier": schema.StringAttribute{Computed: true, MarkdownDescription: "Resolved service tier."},
+			"tools_json":   schema.StringAttribute{Computed: true, MarkdownDescription: "Canonical JSON array of persisted tools, including function, MCP, web_search, and programmatic_tool_calling entries. Credential-bearing MCP fields are rejected."},
 		},
 	}
 }
@@ -53,6 +55,7 @@ type agentDataSourceModel struct {
 	Name         types.String `tfsdk:"name"`
 	Metadata     types.Map    `tfsdk:"metadata"`
 	ServiceTier  types.String `tfsdk:"service_tier"`
+	ToolsJSON    types.String `tfsdk:"tools_json"`
 }
 
 func (d *AgentDataSource) Configure(_ context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
@@ -84,5 +87,20 @@ func (d *AgentDataSource) Read(ctx context.Context, req datasource.ReadRequest, 
 	mv, diags := types.MapValueFrom(ctx, types.StringType, meta)
 	resp.Diagnostics.Append(diags...)
 	data.Metadata = mv
+	if err := client.ValidatePersistedTools(agent.Tools); err != nil {
+		resp.Diagnostics.AddError("Invalid tools from API", err.Error())
+		return
+	}
+	raw, err := json.Marshal(agent.Tools)
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid tools from API", err.Error())
+		return
+	}
+	canon, err := client.CanonicalJSON(string(raw))
+	if err != nil {
+		resp.Diagnostics.AddError("Invalid tools from API", err.Error())
+		return
+	}
+	data.ToolsJSON = types.StringValue(canon)
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }

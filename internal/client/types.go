@@ -265,6 +265,8 @@ type OAuthRefreshWrite struct {
 	TokenEndpoint     string
 	ClientID          string
 	RefreshToken      string
+	Scope             string
+	Resource          string
 	TokenEndpointAuth *TokenEndpointAuthWrite
 }
 

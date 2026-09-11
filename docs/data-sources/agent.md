@@ -34,4 +34,5 @@ data "openaiagents_agent" "selected" {
 - `name` (String) Agent name.
 - `object` (String) Object type.
 - `service_tier` (String) Resolved service tier.
+- `tools_json` (String) Canonical JSON array of persisted tools, including function, MCP, web_search, and programmatic_tool_calling entries. Credential-bearing MCP fields are rejected.
 - `updated_at` (Number) Unix update timestamp.

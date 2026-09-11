@@ -15,6 +15,7 @@ import (
 func TestAccEnvironmentTemplateResource(t *testing.T) {
 	fake := testFake
 	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{

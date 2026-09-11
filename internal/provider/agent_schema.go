@@ -7,10 +7,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
@@ -113,7 +116,9 @@ func agentResourceSchema() schema.Schema {
 			},
 			"service_tier": schema.StringAttribute{
 				Optional:            true,
-				MarkdownDescription: "Service tier: `auto`, `default`, `flex`, `priority`, or `fast`. Omitted on create so the API default applies.",
+				Computed:            true,
+				Default:             stringdefault.StaticString("auto"),
+				MarkdownDescription: "Service tier: `auto`, `default`, `flex`, `priority`, or `fast`. Defaults to the API value `auto`.",
 			},
 			"reasoning": schema.SingleNestedAttribute{
 				Optional:            true,
@@ -164,6 +169,8 @@ func agentResourceSchema() schema.Schema {
 					},
 					"max_concurrent_subagents": schema.Int64Attribute{
 						Optional:            true,
+						Computed:            true,
+						Default:             int64default.StaticInt64(6),
 						MarkdownDescription: "Maximum concurrent subagents. Defaults to 6 when enabled.",
 					},
 				},
@@ -194,14 +201,25 @@ func toolSchemaAttributes() map[string]schema.Attribute {
 				"name":            schema.StringAttribute{Required: true, MarkdownDescription: "Function name."},
 				"description":     schema.StringAttribute{Required: true, MarkdownDescription: "Function description."},
 				"parameters_json": schema.StringAttribute{Required: true, CustomType: jsontypes.NormalizedType{}, MarkdownDescription: "JSON Schema for function arguments as a JSON string."},
-				"defer_loading":   schema.BoolAttribute{Optional: true, MarkdownDescription: "Whether the function is deferred and discovered through tool search."},
+				"defer_loading": schema.BoolAttribute{
+					Optional:            true,
+					Computed:            true,
+					Default:             booldefault.StaticBool(false),
+					MarkdownDescription: "Whether the function is deferred and discovered through tool search. Defaults to false.",
+				},
 			},
 		},
 		"programmatic_tool_calling": schema.SingleNestedAttribute{
 			Optional:            true,
+			Computed:            true,
 			MarkdownDescription: "Programmatic tool calling. Used when `type` is `programmatic_tool_calling`.",
 			Attributes: map[string]schema.Attribute{
-				"enabled": schema.BoolAttribute{Optional: true, MarkdownDescription: "Whether tools can be called from model-generated code. Defaults to true."},
+				"enabled": schema.BoolAttribute{
+					Optional:            true,
+					Computed:            true,
+					Default:             booldefault.StaticBool(true),
+					MarkdownDescription: "Whether tools can be called from model-generated code. Defaults to true.",
+				},
 			},
 		},
 		"mcp": schema.SingleNestedAttribute{
@@ -226,11 +244,17 @@ func toolSchemaAttributes() map[string]schema.Attribute {
 				"connection_origin":     schema.StringAttribute{Optional: true, MarkdownDescription: "`service` (OpenAI network) or `environment` (session environment)."},
 				"credential_id":         schema.StringAttribute{Optional: true, MarkdownDescription: "Vault credential selected for this MCP server."},
 				"request_metadata_json": schema.StringAttribute{Optional: true, CustomType: jsontypes.NormalizedType{}, MarkdownDescription: "Metadata included with requests to this MCP server, as a JSON object string."},
-				"required":              schema.BoolAttribute{Optional: true, MarkdownDescription: "Whether this MCP server must initialize before the first turn."},
+				"required": schema.BoolAttribute{
+					Optional:            true,
+					Computed:            true,
+					Default:             booldefault.StaticBool(false),
+					MarkdownDescription: "Whether this MCP server must initialize before the first turn. Defaults to false.",
+				},
 			},
 		},
 		"web_search": schema.SingleNestedAttribute{
 			Optional:            true,
+			Computed:            true,
 			MarkdownDescription: "Web search tool. Used when `type` is `web_search`.",
 			Attributes: map[string]schema.Attribute{
 				"allowed_domains": schema.ListAttribute{Optional: true, ElementType: types.StringType, MarkdownDescription: "Domains the search may include."},
