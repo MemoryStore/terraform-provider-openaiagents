@@ -1,0 +1,1 @@
+terraform import openaiagents_vault_credential.docs vault_abc123/cred_abc123

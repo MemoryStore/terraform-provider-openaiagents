@@ -1,64 +1,77 @@
-# Terraform Provider Scaffolding (Terraform Plugin Framework)
+# Terraform Provider for the OpenAI Agents API
 
-_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework). The template repository built on the [Terraform Plugin SDK](https://github.com/hashicorp/terraform-plugin-sdk) can be found at [terraform-provider-scaffolding](https://github.com/hashicorp/terraform-provider-scaffolding). See [Which SDK Should I Use?](https://developer.hashicorp.com/terraform/plugin/framework-benefits) in the Terraform documentation for additional information._
+Manage **hosted OpenAI Agents API** deployment objects with Terraform: saved agents, hosted environment templates, and vault credentials.
 
-This repository is a *template* for a [Terraform](https://www.terraform.io) provider. It is intended as a starting point for creating Terraform providers, containing:
+This is **not** the Assistants API, Responses API, Agents SDK, or Azure agent services. Plan and apply never create sessions, send messages, or run turns.
 
-- A resource and a data source (`internal/provider/`),
-- Examples (`examples/`) and generated documentation (`docs/`),
-- Miscellaneous meta files.
+Provider source: [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents)  
+Resource prefix: `openaiagents_*`  
+Terraform: `>= 1.11` (write-only arguments)
 
-These files contain boilerplate code that you will need to edit to create your own Terraform provider. Tutorials for creating Terraform providers can be found on the [HashiCorp Developer](https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework) platform. _Terraform Plugin Framework specific guides are titled accordingly._
+The Registry listing is created after the first signed GitHub release (`v0.1.0` or later). Until then, use a [development override](#local-development).
 
-Please see the [GitHub template repository documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template) for how to create a new repository from this template on GitHub.
+## Resources and data sources
 
-Once you've written your provider, you'll want to [publish it on the Terraform Registry](https://developer.hashicorp.com/terraform/registry/providers/publishing) so that others can use it.
+| Resource | Data source | Remote object |
+| --- | --- | --- |
+| `openaiagents_agent` | `openaiagents_agent` | `POST/GET/POST/DELETE /v1/agents` |
+| `openaiagents_environment_template` | `openaiagents_environment_template` | `/v1/agents/environments/templates` |
+| `openaiagents_vault` | `openaiagents_vault` | `/v1/vaults` (no update API) |
+| `openaiagents_vault_credential` | `openaiagents_vault_credential` | `/v1/vaults/{id}/credentials` |
 
-## Requirements
+Field-level coverage, rejected tool variants, and template readback limits: [API_COVERAGE.md](API_COVERAGE.md).
 
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.24
+## Authentication
 
-## Building the Provider
+Configure a **project API key**:
 
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using the Go `install` command:
+- Provider argument `api_key` (sensitive), or
+- Environment variable `OPENAI_API_KEY`
+
+Optional: `organization` (`OPENAI_ORG_ID` / `OPENAI_ORGANIZATION`), `project` (`OPENAI_PROJECT`), `base_url` (`OPENAI_BASE_URL`, default `https://api.openai.com/v1`).
+
+This provider **never reads or forwards `OPENAI_ADMIN_KEY`**. Use `openai/openai` separately for organization administration.
+
+Requests send `OpenAI-Beta: agents=v1`.
+
+## Local development
 
 ```shell
 go install
 ```
 
-## Adding Dependencies
+Development override (the Registry package is unpublished):
 
-This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
-Please see the Go documentation for the most up to date information about using Go modules.
-
-To add a new dependency `github.com/author/dependency` to your Terraform provider:
-
-```shell
-go get github.com/author/dependency
-go mod tidy
+```hcl
+provider_installation {
+  dev_overrides {
+    "MemoryStore/openaiagents" = "/home/YOU/go/bin"
+  }
+  direct {}
+}
 ```
 
-Then commit the changes to `go.mod` and `go.sum`.
-
-## Using the Provider
-
-Fill this in for each provider
-
-## Developing the Provider
-
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
-
-To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
-
-To generate or update documentation, run `make generate`.
-
-In order to run the full suite of Acceptance tests, run `make testacc`.
-
-*Note:* Acceptance tests create real resources, and often cost money to run.
+Then `terraform plan` / `apply` against a configuration that sets `OPENAI_API_KEY` in the environment.
 
 ```shell
-make testacc
+make test      # offline unit and fake-API lifecycle tests
+make generate  # docs from schema
 ```
+
+Ordinary tests and CI never contact `api.openai.com`. Live acceptance is opt-in (`OPENAIAGENTS_ACC_LIVE=1`) and is not the default `make test` path.
+
+## Secrets
+
+Bearer tokens, OAuth tokens, client secrets, environment values, setup-command bodies, and archive bytes are write-only. They are not stored in state. Use non-secret revision attributes (`token_revision`, `env_revision`, `files_revision`, …) to rotate or re-upload.
+
+See `examples/resources/openaiagents_vault_credential` for an ephemeral token input.
+
+## Immutable releases
+
+Saved agents and templates are mutable remote objects. For an immutable release, key configuration by an external artifact digest, create new objects, publish the new IDs, and retain old objects while sessions still need them. `create_before_destroy` alone does not keep old IDs after apply.
+
+The `examples/consumer` module exports `agent_id`, optional `environment_template_id`, `vault_ids`, and `artifact_digest` without Memory Store internals.
+
+## License
+
+MPL-2.0. Scaffolding originated from HashiCorp's Terraform Plugin Framework template.

@@ -4,7 +4,7 @@ schema: 1.1
 partition: tf-ecosystem
 
 summary:
-  owner: team-tf-core-plugins
+  owner: MemoryStore
   description: |
-    Quick start repository for creating a Terraform provider using terraform-plugin-framework
+    Terraform provider for the hosted OpenAI Agents API (saved agents, environment templates, vaults).
   visibility: public

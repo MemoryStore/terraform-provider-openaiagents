@@ -76,7 +76,10 @@ jobs:
           terraform_version: ${{ matrix.terraform }}
           terraform_wrapper: false
       - run: go mod download
-      - env:
+      - name: Offline tests (fake API only)
+        env:
           TF_ACC: "1"
-        run: go test -v -cover ./internal/provider/
+          OPENAI_API_KEY: ""
+          OPENAIAGENTS_ACC_LIVE: ""
+        run: go test -v -cover ./...
         timeout-minutes: 10

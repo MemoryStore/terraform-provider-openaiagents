@@ -1,0 +1,1 @@
+terraform import openaiagents_environment_template.skills envtpl_abc123

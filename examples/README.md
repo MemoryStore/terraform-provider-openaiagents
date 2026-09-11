@@ -1,9 +1,18 @@
 # Examples
 
-This directory contains examples that are mostly used for documentation, but can also be run/tested manually via the Terraform CLI.
+These configurations target the hosted OpenAI Agents API. They do not create sessions or run turns.
 
-The document generation tool looks for files in the following locations by default. All other *.tf files besides the ones mentioned below are ignored by the documentation tool. This is useful for creating examples that can run and/or are testable even if some parts are not relevant for the documentation.
+Set `OPENAI_API_KEY` in the environment. Do not check keys into this repository. This provider never reads `OPENAI_ADMIN_KEY`.
 
-* **provider/provider.tf** example file for the provider index page
-* **data-sources/`full data source name`/data-source.tf** example file for the named data source page
-* **resources/`full resource name`/resource.tf** example file for the named data source page
+Terraform 1.11 or later is required for write-only arguments.
+
+The Registry source `MemoryStore/openaiagents` is unpublished. Use a development override until a release is authorized:
+
+```hcl
+provider_installation {
+  dev_overrides {
+    "MemoryStore/openaiagents" = "/path/to/go/bin"
+  }
+  direct {}
+}
+```
