@@ -11,6 +11,8 @@ IMPROVEMENTS:
 * Conflicting tool variant blocks are rejected instead of silently discarded
 * Disabled `multi_agent` no longer plans `max_concurrent_subagents = 6`
 * Template import reads back observable network, packages, files, skills, and plugins
+* Unknown `multi_agent.max_concurrent_subagents` is no longer replaced with 6 during plan
+* An API-empty `capability_directories` list is written to state so external clears are detected
 
 ## 0.1.2 (2026-09-11)
 

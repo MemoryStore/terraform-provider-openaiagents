@@ -151,6 +151,43 @@ resource "openaiagents_environment_template" "test" {
 	})
 }
 
+func TestAccEnvironmentTemplateCapabilityDirectoriesDrift(t *testing.T) {
+	fake := testFake
+	var id string
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "hosted"
+  capability_directories = ["/workspace/capabilities/skills"]
+}
+`,
+				Check: func(s *terraform.State) error {
+					id = s.RootModule().Resources["openaiagents_environment_template.test"].Primary.ID
+					return nil
+				},
+			},
+			{
+				PreConfig: func() {
+					fake.SetTemplateCapabilityDirectories(id, []string{})
+				},
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "hosted"
+  capability_directories = ["/workspace/capabilities/skills"]
+}
+`,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectNonEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
 func TestAccEnvironmentTemplateImportObservable(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		IsUnitTest:               true,

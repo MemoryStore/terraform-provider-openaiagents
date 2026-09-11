@@ -357,7 +357,7 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 	importing := templateImport(prior)
 
 	keepDirs := importing || attrKnown(prior.CapabilityDirectories)
-	if keepDirs && len(tpl.CapabilityDirectories) > 0 {
+	if keepDirs && tpl.CapabilityDirectories != nil {
 		lv, d := types.ListValueFrom(ctx, types.StringType, tpl.CapabilityDirectories)
 		diags.Append(d...)
 		out.CapabilityDirectories = lv

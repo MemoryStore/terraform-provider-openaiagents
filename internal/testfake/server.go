@@ -1021,6 +1021,22 @@ func stringSlice(v any) []string {
 }
 
 // TemplateLastWrite returns the raw JSON body of the last create or update for a template.
+// SetTemplateCapabilityDirectories overwrites stored capability directories.
+// Tests use a non-nil empty slice to model an API that returned [].
+func (s *Server) SetTemplateCapabilityDirectories(id string, dirs []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if rec, ok := s.templates[id]; ok {
+		if dirs == nil {
+			rec.Public.CapabilityDirectories = nil
+			return
+		}
+		cp := make([]string, len(dirs))
+		copy(cp, dirs)
+		rec.Public.CapabilityDirectories = cp
+	}
+}
+
 func (s *Server) TemplateLastWrite(id string) []byte {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -80,11 +80,10 @@ func (m maxConcurrentModifier) PlanModifyInt64(ctx context.Context, req planmodi
 		resp.PlanValue = types.Int64Null()
 		return
 	}
-	if !req.ConfigValue.IsNull() && !req.ConfigValue.IsUnknown() {
+	if req.ConfigValue.IsUnknown() {
 		return
 	}
-	if !req.StateValue.IsNull() && !req.StateValue.IsUnknown() {
-		resp.PlanValue = req.StateValue
+	if !req.ConfigValue.IsNull() {
 		return
 	}
 	resp.PlanValue = types.Int64Value(6)
