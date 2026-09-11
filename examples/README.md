@@ -6,7 +6,7 @@ Set `OPENAI_API_KEY` in the environment. Do not check keys into this repository.
 
 Terraform 1.11 or later is required for write-only arguments.
 
-The Registry source `MemoryStore/openaiagents` is unpublished. Use a development override until a release is authorized:
+The Registry source is [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents). For local builds, a development override is optional:
 
 ```hcl
 provider_installation {
