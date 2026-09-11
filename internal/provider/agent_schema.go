@@ -264,13 +264,13 @@ func toolSchemaAttributes() map[string]schema.Attribute {
 					Optional:            true,
 					Computed:            true,
 					Default:             stringdefault.StaticString("medium"),
-					MarkdownDescription: "`low`, `medium`, or `high`. Defaults to the API value `medium`.",
+					MarkdownDescription: "`low`, `medium`, or `high`. Defaults to the hosted API value `medium` (verified 2026-09-11).",
 				},
 				"mode": schema.StringAttribute{
 					Optional:            true,
 					Computed:            true,
 					Default:             stringdefault.StaticString("live"),
-					MarkdownDescription: "`disabled`, `cached`, or `live`. Defaults to the API value `live`.",
+					MarkdownDescription: "`disabled`, `cached`, or `live`. Defaults to the hosted API value `live` (verified 2026-09-11).",
 				},
 				"location": schema.SingleNestedAttribute{
 					Optional:            true,

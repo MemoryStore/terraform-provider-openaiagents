@@ -5,6 +5,8 @@ package provider
 
 import (
 	"context"
+	"sort"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
@@ -86,14 +88,29 @@ func templateWriteFrom(ctx context.Context, plan, state, config templateModel, c
 	sendFiles := create || revisionChanged(plan.FilesRevision, state.FilesRevision)
 	sendSkills := create || revisionChanged(plan.SkillsRevision, state.SkillsRevision)
 	sendPlugins := create || revisionChanged(plan.PluginsRevision, state.PluginsRevision)
+	if !create && !sendSetup && gatedListPublicChanged(plan.SetupCommands, state.SetupCommands, []string{"cwd"}) {
+		sendSetup = true
+	}
+	if !create && !sendFiles && gatedListPublicChanged(plan.Files, state.Files, []string{"type", "path", "file_id"}) {
+		sendFiles = true
+	}
+	if !create && !sendSkills && gatedListPublicChanged(plan.Skills, state.Skills, []string{"type", "name", "description", "skill_id", "version", "source_media_type"}) {
+		sendSkills = true
+	}
+	if !create && !sendPlugins && gatedListPublicChanged(plan.Plugins, state.Plugins, []string{"type", "name", "description", "source_media_type"}) {
+		sendPlugins = true
+	}
+	if !create && !sendEnv && envKeysChanged(ctx, config.Env, state.EnvKeys) {
+		sendEnv = true
+	}
 	if sendEnv || sendSetup || sendFiles || sendSkills || sendPlugins {
 		write.SendConfidential = true
 	}
 
 	if sendEnv {
 		if config.Env.IsNull() || config.Env.IsUnknown() {
-			if !create && revisionChanged(plan.EnvRevision, state.EnvRevision) {
-				diags.AddError("Missing env values", "env_revision changed but env was not provided in configuration")
+			if !create {
+				diags.AddError("Missing env values", "env keys or env_revision changed; increment env_revision and provide env in configuration")
 			}
 		} else {
 			m := map[string]string{}
@@ -104,45 +121,61 @@ func templateWriteFrom(ctx context.Context, plan, state, config templateModel, c
 	if sendSetup {
 		if config.SetupCommands.IsNull() || config.SetupCommands.IsUnknown() {
 			if !create {
-				diags.AddError("Missing setup_commands", "setup_commands_revision changed but setup_commands was not provided in configuration")
+				diags.AddError("Missing setup_commands", "setup_commands changed; increment setup_commands_revision and provide setup_commands in configuration")
 			}
 		} else {
 			cmds, d := setupCommandsFromConfig(ctx, config.SetupCommands)
 			diags.Append(d...)
-			write.SetupCommands = client.Set(cmds)
+			if !create && setupCommandsMissingBody(cmds) {
+				diags.AddError("Missing setup_commands", "setup_commands cwd or entries changed; increment setup_commands_revision and include command bodies in configuration")
+			} else {
+				write.SetupCommands = client.Set(cmds)
+			}
 		}
 	}
 	if sendFiles {
 		if config.Files.IsNull() || config.Files.IsUnknown() {
 			if !create {
-				diags.AddError("Missing files", "files_revision changed but files was not provided in configuration")
+				diags.AddError("Missing files", "files changed; increment files_revision and provide files in configuration")
 			}
 		} else {
 			files, d := filesFromConfig(ctx, config.Files, true)
 			diags.Append(d...)
-			write.Files = client.Set(files)
+			if !create && inlineFilesMissingData(files) {
+				diags.AddError("Missing files data", "files path or metadata changed; increment files_revision and include files[].data in configuration")
+			} else {
+				write.Files = client.Set(files)
+			}
 		}
 	}
 	if sendSkills {
 		if config.Skills.IsNull() || config.Skills.IsUnknown() {
 			if !create {
-				diags.AddError("Missing skills", "skills_revision changed but skills was not provided in configuration")
+				diags.AddError("Missing skills", "skills changed; increment skills_revision and provide skills in configuration")
 			}
 		} else {
 			skills, d := skillsFromConfig(ctx, config.Skills, true)
 			diags.Append(d...)
-			write.Skills = client.Set(skills)
+			if !create && inlineSkillsMissingData(skills) {
+				diags.AddError("Missing skills data", "skills metadata changed; increment skills_revision and include source_data for inline skills")
+			} else {
+				write.Skills = client.Set(skills)
+			}
 		}
 	}
 	if sendPlugins {
 		if config.Plugins.IsNull() || config.Plugins.IsUnknown() {
 			if !create {
-				diags.AddError("Missing plugins", "plugins_revision changed but plugins was not provided in configuration")
+				diags.AddError("Missing plugins", "plugins changed; increment plugins_revision and provide plugins in configuration")
 			}
 		} else {
 			plugins, d := pluginsFromConfig(ctx, config.Plugins, true)
 			diags.Append(d...)
-			write.Plugins = client.Set(plugins)
+			if !create && inlinePluginsMissingData(plugins) {
+				diags.AddError("Missing plugins data", "plugins metadata changed; increment plugins_revision and include source_data in configuration")
+			} else {
+				write.Plugins = client.Set(plugins)
+			}
 		}
 	}
 	return write, diags
@@ -341,6 +374,8 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		lv, d := types.ListValueFrom(ctx, types.StringType, tpl.EnvKeys)
 		diags.Append(d...)
 		out.EnvKeys = lv
+	} else if !prior.EnvKeys.IsNull() && !prior.EnvKeys.IsUnknown() {
+		out.EnvKeys = prior.EnvKeys
 	} else {
 		out.EnvKeys = types.ListNull(types.StringType)
 	}
@@ -464,6 +499,128 @@ func setupCommandsToState(prior types.List) types.List {
 	}
 	lv, _ := types.ListValue(types.ObjectType{AttrTypes: setupAttrTypes}, out)
 	return lv
+}
+
+func gatedListPublicChanged(plan, state types.List, keys []string) bool {
+	if plan.IsUnknown() || state.IsUnknown() {
+		return false
+	}
+	if plan.IsNull() && state.IsNull() {
+		return false
+	}
+	if plan.IsNull() {
+		return false
+	}
+	if state.IsNull() {
+		return true
+	}
+	pe := plan.Elements()
+	se := state.Elements()
+	if len(pe) != len(se) {
+		return true
+	}
+	for i := range pe {
+		po, pok := pe[i].(types.Object)
+		so, sok := se[i].(types.Object)
+		if !pok || !sok || po.IsUnknown() || so.IsUnknown() {
+			continue
+		}
+		for _, key := range keys {
+			if publicStringAttr(po.Attributes()[key]) != publicStringAttr(so.Attributes()[key]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func envMapKeys(ctx context.Context, env types.Map) ([]string, bool) {
+	if env.IsNull() || env.IsUnknown() {
+		return nil, false
+	}
+	m := map[string]string{}
+	if diags := env.ElementsAs(ctx, &m, false); diags.HasError() {
+		return nil, false
+	}
+	return mapKeys(m), true
+}
+
+func envKeysChanged(ctx context.Context, configEnv types.Map, stateKeys types.List) bool {
+	if configEnv.IsNull() || configEnv.IsUnknown() || stateKeys.IsNull() || stateKeys.IsUnknown() {
+		return false
+	}
+	cfg := map[string]string{}
+	if diags := configEnv.ElementsAs(ctx, &cfg, false); diags.HasError() {
+		return false
+	}
+	var keys []string
+	if diags := stateKeys.ElementsAs(ctx, &keys, false); diags.HasError() {
+		return false
+	}
+	return !stringSetEqual(mapKeys(cfg), keys)
+}
+
+func mapKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+func stringSetEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	as := append([]string(nil), a...)
+	bs := append([]string(nil), b...)
+	sort.Strings(as)
+	sort.Strings(bs)
+	for i := range as {
+		if as[i] != bs[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func setupCommandsMissingBody(cmds []client.SetupCommand) bool {
+	if len(cmds) == 0 {
+		return true
+	}
+	for _, c := range cmds {
+		if strings.TrimSpace(c.Command) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func inlineFilesMissingData(files []client.TemplateFile) bool {
+	for _, f := range files {
+		if f.Type == "inline" && strings.TrimSpace(f.Data) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+func inlineSkillsMissingData(skills []client.TemplateSkill) bool {
+	for _, s := range skills {
+		if s.Type == "inline" && (s.Source == nil || strings.TrimSpace(s.Source.Data) == "") {
+			return true
+		}
+	}
+	return false
+}
+
+func inlinePluginsMissingData(plugins []client.TemplatePlugin) bool {
+	for _, p := range plugins {
+		if p.Source == nil || strings.TrimSpace(p.Source.Data) == "" {
+			return true
+		}
+	}
+	return false
 }
 
 func optionalStringList(ctx context.Context, values []string) (types.List, diag.Diagnostics) {

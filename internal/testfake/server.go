@@ -1042,7 +1042,40 @@ func (s *Server) TemplateHasEnv(id, key, value string) bool {
 	return rec.Env[key] == value
 }
 
-// TemplateSetupCommand returns the stored confidential setup command body.
+func (s *Server) TemplateSetupCwd(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.templates[id]
+	if !ok || len(rec.Setup) == 0 {
+		return ""
+	}
+	return rec.Setup[0].Cwd
+}
+
+func (s *Server) TemplateEnvKeys(id string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.templates[id]
+	if !ok || rec.Env == nil {
+		return nil
+	}
+	out := make([]string, 0, len(rec.Env))
+	for k := range rec.Env {
+		out = append(out, k)
+	}
+	return out
+}
+
+func (s *Server) TemplateFilePath(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.templates[id]
+	if !ok || len(rec.Files) == 0 {
+		return ""
+	}
+	return rec.Files[0].Path
+}
+
 func (s *Server) TemplateSetupCommand(id string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

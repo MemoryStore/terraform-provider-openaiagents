@@ -51,13 +51,13 @@ MCP preserves URL/transport, server label, allowed tools, connection origin, non
 | `capability_directories` | `capability_directories` | yes | |
 | `network` | `network` | yes | |
 | `packages` | `packages` | yes | |
-| `files` metadata | `files` path/type/`file_id` | metadata only | Inline `data` is write-only |
-| `files[].data` | `files[].data` write-only | **not read back** | Sent when `files_revision` changes |
-| `skills` references | `skills` | metadata | Pin `version` for reproducible deploys |
+| `files` metadata | `files` path/type/`file_id` | metadata only | Inline `data` is write-only. Path/type/`file_id` changes without `files_revision` still send the group when `data` remains in configuration; otherwise the provider errors naming `files_revision`. |
+| `files[].data` | `files[].data` write-only | **not read back** | Sent when `files_revision` changes or when observable file metadata changes and `data` is still in configuration |
+| `skills` references | `skills` | metadata | Pin `version` for reproducible deploys. Observable skill fields follow the same send-or-name-revision rule as files. |
 | `skills` archive bytes | `skills[].source_data` write-only | **not read back** | `skills_revision` |
 | `plugins` archive bytes | `plugins[].source_data` write-only | **not read back** | `plugins_revision` |
-| `env` values | `env` write-only | **not read back** | `env_revision`; `env_keys` if the API returns names |
-| `setup_commands` | `setup_commands` write-only command bodies | **not read back** | The retrieve schema omits `setup_commands` entirely, including `cwd`. Drift detection is `setup_commands_revision` only. Name-only updates omit `files`/`skills`/`plugins`/`setup_commands` so remote confidential content is preserved. |
+| `env` values | `env` write-only | **not read back** | `env_revision`; `env_keys` if the API returns names. Adding/removing keys while `env` remains in configuration sends `env` even if `env_revision` is unchanged. Value-only changes still require `env_revision`. |
+| `setup_commands` | `setup_commands` write-only command bodies | **not read back** | The retrieve schema omits `setup_commands` entirely, including `cwd`. `cwd` is kept in Terraform state from configuration. Changing `cwd` (or the command list) without `setup_commands_revision` sends the group when command bodies remain in configuration; otherwise the provider errors naming `setup_commands_revision`. Name-only updates omit `files`/`skills`/`plugins`/`setup_commands` so remote confidential content is preserved. |
 
 Creating a template does not create a session. Complete drift detection is not claimed for confidential inputs.
 

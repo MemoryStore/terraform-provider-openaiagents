@@ -1,3 +1,9 @@
+## Unreleased
+
+BUG FIXES:
+
+* Changing observable template fields (`files[].path`, `setup_commands[].cwd`, env keys, skill/plugin metadata) without bumping the group revision now reaches the API when write-only values remain in configuration, or errors naming the revision attribute to increment
+
 ## 0.1.1 (2026-09-11)
 
 BUG FIXES:

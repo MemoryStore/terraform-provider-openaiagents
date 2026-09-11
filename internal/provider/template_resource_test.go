@@ -6,6 +6,7 @@ package provider
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -282,6 +283,182 @@ resource "openaiagents_environment_template" "test" {
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
 				},
+			},
+		},
+	})
+}
+
+func TestAccEnvironmentTemplateCwdChangeWithoutRevision(t *testing.T) {
+	fake := testFake
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "setup"
+  setup_commands = [
+    {
+      command = "mkdir -p reports"
+      cwd     = "/workspace"
+    }
+  ]
+  setup_commands_revision = 1
+}
+`,
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "setup"
+  setup_commands = [
+    {
+      command = "mkdir -p reports"
+      cwd     = "/workspace/sub"
+    }
+  ]
+  setup_commands_revision = 1
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("openaiagents_environment_template.test", "setup_commands.0.cwd", "/workspace/sub"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources["openaiagents_environment_template.test"].Primary.ID
+						if fake.TemplateSetupCwd(id) != "/workspace/sub" {
+							return fmt.Errorf("cwd change did not reach API, remote=%q", fake.TemplateSetupCwd(id))
+						}
+						if fake.TemplateSetupCommand(id) != "mkdir -p reports" {
+							return fmt.Errorf("cwd change wiped command")
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccEnvironmentTemplateFilePathChangeWithoutRevision(t *testing.T) {
+	fake := testFake
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "files"
+  files = [
+    {
+      type = "inline"
+      path = "/workspace/a.txt"
+      data = "CANARY_SECRET_DO_NOT_LEAK"
+    }
+  ]
+  files_revision = 1
+}
+`,
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "files"
+  files = [
+    {
+      type = "inline"
+      path = "/workspace/b.txt"
+      data = "CANARY_SECRET_DO_NOT_LEAK"
+    }
+  ]
+  files_revision = 1
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("openaiagents_environment_template.test", "files.0.path", "/workspace/b.txt"),
+					func(s *terraform.State) error {
+						id := s.RootModule().Resources["openaiagents_environment_template.test"].Primary.ID
+						if fake.TemplateFilePath(id) != "/workspace/b.txt" {
+							return fmt.Errorf("path change did not reach API, remote=%q", fake.TemplateFilePath(id))
+						}
+						if fake.TemplateFileData(id) != "CANARY_SECRET_DO_NOT_LEAK" {
+							return fmt.Errorf("path change wiped file bytes")
+						}
+						return nil
+					},
+				),
+			},
+		},
+	})
+}
+
+func TestAccEnvironmentTemplateFilePathChangeRequiresData(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "files"
+  files = [
+    {
+      type = "inline"
+      path = "/workspace/a.txt"
+      data = "CANARY_SECRET_DO_NOT_LEAK"
+    }
+  ]
+  files_revision = 1
+}
+`,
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "files"
+  files = [
+    {
+      type = "inline"
+      path = "/workspace/b.txt"
+    }
+  ]
+  files_revision = 1
+}
+`,
+				ExpectError: regexp.MustCompile("files_revision"),
+			},
+		},
+	})
+}
+
+func TestAccEnvironmentTemplateEnvKeyChangeWithoutRevision(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "env"
+  env = {
+    TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
+  }
+  env_revision = 1
+}
+`,
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "env"
+  env = {
+    TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
+    EXTRA = "second"
+  }
+  env_revision = 1
+}
+`,
+				ExpectError: regexp.MustCompile("env_revision"),
 			},
 		},
 	})

@@ -59,16 +59,16 @@ resource "openaiagents_environment_template" "skills" {
 > **NOTE**: [Write-only arguments](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments) are supported in Terraform 1.11 and later.
 
 - `capability_directories` (List of String) Absolute capability directories discovered by the harness.
-- `env` (Map of String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Environment variable values. Write-only; not read back. Change `env_revision` to send an update.
+- `env` (Map of String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Environment variable values. Write-only; not read back. Change `env_revision` to send value updates. Adding or removing keys while `env` remains in configuration also sends `env`.
 - `env_revision` (Number) Non-secret revision. Increment to send `env` values.
-- `files` (Attributes List) Workspace files. Inline `data` is write-only and is sent when `files_revision` changes. (see [below for nested schema](#nestedatt--files))
+- `files` (Attributes List) Workspace files. Inline `data` is write-only. Changing path, type, or `file_id` also sends the group when `data` remains in configuration; otherwise increment `files_revision`. (see [below for nested schema](#nestedatt--files))
 - `files_revision` (Number) Non-secret revision. Increment to upload inline file bytes.
 - `name` (String) Display name.
 - `network` (Attributes) Network policy for hosted environments. (see [below for nested schema](#nestedatt--network))
 - `packages` (Attributes) Packages to install. (see [below for nested schema](#nestedatt--packages))
 - `plugins` (Attributes List) Inline plugin ZIP archives. Archive bytes are write-only. (see [below for nested schema](#nestedatt--plugins))
 - `plugins_revision` (Number) Non-secret revision. Increment to upload plugin archives.
-- `setup_commands` (Attributes List) Setup commands. Command bodies are write-only; change `setup_commands_revision` to send them again. (see [below for nested schema](#nestedatt--setup_commands))
+- `setup_commands` (Attributes List) Setup commands. Command bodies are write-only. Changing `cwd` also sends the group when `command` remains in configuration; otherwise increment `setup_commands_revision`. (see [below for nested schema](#nestedatt--setup_commands))
 - `setup_commands_revision` (Number) Non-secret revision. Increment to send setup command bodies.
 - `skills` (Attributes List) Skills: inline archives or Skills API references. Archive bytes are write-only. (see [below for nested schema](#nestedatt--skills))
 - `skills_revision` (Number) Non-secret revision. Increment to upload skill archives.

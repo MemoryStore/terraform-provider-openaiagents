@@ -19,6 +19,7 @@ import (
 
 var _ resource.Resource = &EnvironmentTemplateResource{}
 var _ resource.ResourceWithImportState = &EnvironmentTemplateResource{}
+var _ resource.ResourceWithModifyPlan = &EnvironmentTemplateResource{}
 
 // EnvironmentTemplateResource manages a hosted environment template.
 type EnvironmentTemplateResource struct {
@@ -85,7 +86,7 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 			},
 			"files": schema.ListNestedAttribute{
 				Optional:            true,
-				MarkdownDescription: "Workspace files. Inline `data` is write-only and is sent when `files_revision` changes.",
+				MarkdownDescription: "Workspace files. Inline `data` is write-only. Changing path, type, or `file_id` also sends the group when `data` remains in configuration; otherwise increment `files_revision`.",
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"type":    schema.StringAttribute{Required: true, MarkdownDescription: "`file_id` or `inline`."},
 					"path":    schema.StringAttribute{Required: true, MarkdownDescription: "Destination path under `/workspace`."},
@@ -122,11 +123,11 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 				WriteOnly:           true,
 				Sensitive:           true,
 				ElementType:         types.StringType,
-				MarkdownDescription: "Environment variable values. Write-only; not read back. Change `env_revision` to send an update.",
+				MarkdownDescription: "Environment variable values. Write-only; not read back. Change `env_revision` to send value updates. Adding or removing keys while `env` remains in configuration also sends `env`.",
 			},
 			"setup_commands": schema.ListNestedAttribute{
 				Optional:            true,
-				MarkdownDescription: "Setup commands. Command bodies are write-only; change `setup_commands_revision` to send them again.",
+				MarkdownDescription: "Setup commands. Command bodies are write-only. Changing `cwd` also sends the group when `command` remains in configuration; otherwise increment `setup_commands_revision`.",
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"command": schema.StringAttribute{Optional: true, WriteOnly: true, Sensitive: true, MarkdownDescription: "Shell command body. Write-only."},
 					"cwd":     schema.StringAttribute{Optional: true, MarkdownDescription: "Working directory. The API does not read setup commands back; drift detection is revision-based."},
@@ -144,6 +145,25 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 
 func (r *EnvironmentTemplateResource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	r.client = configureClient(req.ProviderData, &resp.Diagnostics)
+}
+
+func (r *EnvironmentTemplateResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
+		return
+	}
+	var plan, state, config templateModel
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
+	resp.Diagnostics.Append(req.Config.Get(ctx, &config)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if !revisionChanged(plan.EnvRevision, state.EnvRevision) && envKeysChanged(ctx, config.Env, state.EnvKeys) {
+		resp.Diagnostics.AddError(
+			"env_revision required",
+			"env keys changed without env_revision; increment env_revision and keep env in configuration",
+		)
+	}
 }
 
 func (r *EnvironmentTemplateResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
@@ -166,6 +186,11 @@ func (r *EnvironmentTemplateResource) Create(ctx context.Context, req resource.C
 	}
 	state, d := templateToState(ctx, plan, tpl)
 	resp.Diagnostics.Append(d...)
+	if keys, ok := envMapKeys(ctx, config.Env); ok && (state.EnvKeys.IsNull() || len(tpl.EnvKeys) == 0) {
+		lv, kd := types.ListValueFrom(ctx, types.StringType, keys)
+		resp.Diagnostics.Append(kd...)
+		state.EnvKeys = lv
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -210,6 +235,11 @@ func (r *EnvironmentTemplateResource) Update(ctx context.Context, req resource.U
 	}
 	next, d := templateToState(ctx, plan, tpl)
 	resp.Diagnostics.Append(d...)
+	if keys, ok := envMapKeys(ctx, config.Env); ok && write.Env.Present && (next.EnvKeys.IsNull() || len(tpl.EnvKeys) == 0) {
+		lv, kd := types.ListValueFrom(ctx, types.StringType, keys)
+		resp.Diagnostics.Append(kd...)
+		next.EnvKeys = lv
+	}
 	resp.Diagnostics.Append(resp.State.Set(ctx, &next)...)
 }
 

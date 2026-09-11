@@ -67,6 +67,11 @@ func ptcPlanModifier() planmodifier.Object {
 }
 
 func webSearchPlanModifier() planmodifier.Object {
+	// Hosted Agents API defaults observed 2026-09-11 against api.openai.com
+	// with OpenAI-Beta: agents=v1. A bare {"type":"web_search"} create returned
+	// context_size=medium and mode=live. If OpenAI changes those server
+	// defaults, a second plan against production fails with inconsistent
+	// result until these values are updated.
 	return typedNestedObjectModifier{
 		toolType:  "web_search",
 		attrTypes: webSearchAttrTypes,
