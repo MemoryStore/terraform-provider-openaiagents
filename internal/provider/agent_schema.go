@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -213,7 +212,7 @@ func toolSchemaAttributes() map[string]schema.Attribute {
 		"programmatic_tool_calling": schema.SingleNestedAttribute{
 			Optional:            true,
 			Computed:            true,
-			PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+			PlanModifiers:       []planmodifier.Object{ptcPlanModifier()},
 			MarkdownDescription: "Programmatic tool calling. Used when `type` is `programmatic_tool_calling`.",
 			Attributes: map[string]schema.Attribute{
 				"enabled": schema.BoolAttribute{
@@ -257,12 +256,22 @@ func toolSchemaAttributes() map[string]schema.Attribute {
 		"web_search": schema.SingleNestedAttribute{
 			Optional:            true,
 			Computed:            true,
-			PlanModifiers:       []planmodifier.Object{objectplanmodifier.UseStateForUnknown()},
+			PlanModifiers:       []planmodifier.Object{webSearchPlanModifier()},
 			MarkdownDescription: "Web search tool. Used when `type` is `web_search`.",
 			Attributes: map[string]schema.Attribute{
 				"allowed_domains": schema.ListAttribute{Optional: true, ElementType: types.StringType, MarkdownDescription: "Domains the search may include."},
-				"context_size":    schema.StringAttribute{Optional: true, MarkdownDescription: "`low`, `medium`, or `high`."},
-				"mode":            schema.StringAttribute{Optional: true, MarkdownDescription: "`disabled`, `cached`, or `live`."},
+				"context_size": schema.StringAttribute{
+					Optional:            true,
+					Computed:            true,
+					Default:             stringdefault.StaticString("medium"),
+					MarkdownDescription: "`low`, `medium`, or `high`. Defaults to the API value `medium`.",
+				},
+				"mode": schema.StringAttribute{
+					Optional:            true,
+					Computed:            true,
+					Default:             stringdefault.StaticString("live"),
+					MarkdownDescription: "`disabled`, `cached`, or `live`. Defaults to the API value `live`.",
+				},
 				"location": schema.SingleNestedAttribute{
 					Optional:            true,
 					MarkdownDescription: "Approximate user location.",

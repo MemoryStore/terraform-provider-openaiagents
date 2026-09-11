@@ -60,6 +60,8 @@ resource "openaiagents_agent" "test" {
 					resource.TestCheckResourceAttr("openaiagents_agent.test", "multi_agent.max_concurrent_subagents", "6"),
 					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.0.function.defer_loading", "false"),
 					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.1.programmatic_tool_calling.enabled", "true"),
+					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.2.web_search.context_size", "medium"),
+					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.2.web_search.mode", "live"),
 					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.3.mcp.required", "false"),
 					func(s *terraform.State) error {
 						id := s.RootModule().Resources["openaiagents_agent.test"].Primary.ID
@@ -143,6 +145,12 @@ func assertAgentCreateSendsDefaults(body []byte) error {
 	ws, _ := tools[2].(map[string]any)
 	if ws["type"] != "web_search" {
 		return fmt.Errorf("create payload tools[2].type = %#v, want web_search", ws["type"])
+	}
+	if ws["context_size"] != "medium" {
+		return fmt.Errorf("create payload web_search.context_size = %#v, want medium", ws["context_size"])
+	}
+	if ws["mode"] != "live" {
+		return fmt.Errorf("create payload web_search.mode = %#v, want live", ws["mode"])
 	}
 	mcp, _ := tools[3].(map[string]any)
 	if mcp["required"] != false {
@@ -233,6 +241,41 @@ resource "openaiagents_agent" "test" {
 }
 `,
 				ExpectError: regexp.MustCompile("server_url"),
+			},
+		},
+	})
+}
+
+func TestAccAgentResourceToolReorder(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  tools = [
+    { type = "web_search" },
+    { type = "programmatic_tool_calling" },
+  ]
+}
+`,
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  tools = [
+    { type = "programmatic_tool_calling" },
+    { type = "web_search" },
+  ]
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.0.type", "programmatic_tool_calling"),
+					resource.TestCheckResourceAttr("openaiagents_agent.test", "tools.1.type", "web_search"),
+				),
 			},
 		},
 	})

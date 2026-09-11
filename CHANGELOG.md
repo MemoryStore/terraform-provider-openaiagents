@@ -2,6 +2,10 @@
 
 BUG FIXES:
 
+* Name-only environment template updates no longer send `files`/`skills`/`plugins` without bytes, which wiped remote inline content
+* Creating a template with `setup_commands` no longer fails when the API omits that field on read
+* Reordering `web_search` and `programmatic_tool_calling` tools no longer copies nested objects across list indexes
+* Bare `web_search` tools now plan the API defaults `context_size=medium` and `mode=live`, so a second apply against the hosted API is empty
 * OAuth credential no-op applies no longer treat write-only refresh secrets as a remote change
 * `static_bearer` credentials reject `expires_at` and `refresh` instead of posting an empty rotation
 * Fake Agents API persists OAuth refresh `scope` and `resource` so grant updates can be verified

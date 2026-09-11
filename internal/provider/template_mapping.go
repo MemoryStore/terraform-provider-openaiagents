@@ -101,25 +101,49 @@ func templateWriteFrom(ctx context.Context, plan, state, config templateModel, c
 			write.Env = client.Set(m)
 		}
 	}
-	if sendSetup && !config.SetupCommands.IsNull() && !config.SetupCommands.IsUnknown() {
-		cmds, d := setupCommandsFromConfig(ctx, config.SetupCommands)
-		diags.Append(d...)
-		write.SetupCommands = client.Set(cmds)
+	if sendSetup {
+		if config.SetupCommands.IsNull() || config.SetupCommands.IsUnknown() {
+			if !create {
+				diags.AddError("Missing setup_commands", "setup_commands_revision changed but setup_commands was not provided in configuration")
+			}
+		} else {
+			cmds, d := setupCommandsFromConfig(ctx, config.SetupCommands)
+			diags.Append(d...)
+			write.SetupCommands = client.Set(cmds)
+		}
 	}
-	if !plan.Files.IsNull() && !plan.Files.IsUnknown() {
-		files, d := filesFromConfig(ctx, config.Files, sendFiles)
-		diags.Append(d...)
-		write.Files = client.Set(files)
+	if sendFiles {
+		if config.Files.IsNull() || config.Files.IsUnknown() {
+			if !create {
+				diags.AddError("Missing files", "files_revision changed but files was not provided in configuration")
+			}
+		} else {
+			files, d := filesFromConfig(ctx, config.Files, true)
+			diags.Append(d...)
+			write.Files = client.Set(files)
+		}
 	}
-	if !plan.Skills.IsNull() && !plan.Skills.IsUnknown() {
-		skills, d := skillsFromConfig(ctx, config.Skills, sendSkills)
-		diags.Append(d...)
-		write.Skills = client.Set(skills)
+	if sendSkills {
+		if config.Skills.IsNull() || config.Skills.IsUnknown() {
+			if !create {
+				diags.AddError("Missing skills", "skills_revision changed but skills was not provided in configuration")
+			}
+		} else {
+			skills, d := skillsFromConfig(ctx, config.Skills, true)
+			diags.Append(d...)
+			write.Skills = client.Set(skills)
+		}
 	}
-	if !plan.Plugins.IsNull() && !plan.Plugins.IsUnknown() {
-		plugins, d := pluginsFromConfig(ctx, config.Plugins, sendPlugins)
-		diags.Append(d...)
-		write.Plugins = client.Set(plugins)
+	if sendPlugins {
+		if config.Plugins.IsNull() || config.Plugins.IsUnknown() {
+			if !create {
+				diags.AddError("Missing plugins", "plugins_revision changed but plugins was not provided in configuration")
+			}
+		} else {
+			plugins, d := pluginsFromConfig(ctx, config.Plugins, true)
+			diags.Append(d...)
+			write.Plugins = client.Set(plugins)
+		}
 	}
 	return write, diags
 }
@@ -390,22 +414,10 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		out.Plugins = lv
 	}
 
-	if prior.SetupCommands.IsNull() || prior.SetupCommands.IsUnknown() {
-		out.SetupCommands = types.ListNull(types.ObjectType{AttrTypes: setupAttrTypes})
-	} else {
-		setup := make([]attr.Value, 0, len(tpl.SetupCommandMetadata))
-		for _, c := range tpl.SetupCommandMetadata {
-			obj, d := types.ObjectValue(setupAttrTypes, map[string]attr.Value{
-				"command": types.StringNull(),
-				"cwd":     nullIfEmpty(c.Cwd),
-			})
-			diags.Append(d...)
-			setup = append(setup, obj)
-		}
-		lv, d := types.ListValue(types.ObjectType{AttrTypes: setupAttrTypes}, setup)
-		diags.Append(d...)
-		out.SetupCommands = lv
-	}
+	// The hosted API does not return setup_commands. Keep configured cwd and
+	// null the write-only command body so create does not produce an
+	// inconsistent sensitive value.
+	out.SetupCommands = setupCommandsToState(prior.SetupCommands)
 
 	return out, diags
 }
@@ -425,6 +437,33 @@ func packagesToObject(ctx context.Context, p client.Packages) (types.Object, dia
 	})
 	diags.Append(d...)
 	return obj, diags
+}
+
+func setupCommandsToState(prior types.List) types.List {
+	if prior.IsNull() || prior.IsUnknown() {
+		return types.ListNull(types.ObjectType{AttrTypes: setupAttrTypes})
+	}
+	elems := prior.Elements()
+	out := make([]attr.Value, 0, len(elems))
+	for _, elem := range elems {
+		obj, ok := elem.(types.Object)
+		if !ok || obj.IsNull() {
+			continue
+		}
+		cwd := types.StringNull()
+		if v, exists := obj.Attributes()["cwd"]; exists {
+			if s, ok := v.(types.String); ok && !s.IsUnknown() {
+				cwd = s
+			}
+		}
+		n, _ := types.ObjectValue(setupAttrTypes, map[string]attr.Value{
+			"command": types.StringNull(),
+			"cwd":     cwd,
+		})
+		out = append(out, n)
+	}
+	lv, _ := types.ListValue(types.ObjectType{AttrTypes: setupAttrTypes}, out)
+	return lv
 }
 
 func optionalStringList(ctx context.Context, values []string) (types.List, diag.Diagnostics) {

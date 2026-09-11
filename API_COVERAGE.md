@@ -57,7 +57,7 @@ MCP preserves URL/transport, server label, allowed tools, connection origin, non
 | `skills` archive bytes | `skills[].source_data` write-only | **not read back** | `skills_revision` |
 | `plugins` archive bytes | `plugins[].source_data` write-only | **not read back** | `plugins_revision` |
 | `env` values | `env` write-only | **not read back** | `env_revision`; `env_keys` if the API returns names |
-| `setup_commands[].command` | `setup_commands[].command` write-only | **not read back** | `setup_commands_revision`; `cwd` is observable |
+| `setup_commands` | `setup_commands` write-only command bodies | **not read back** | The retrieve schema omits `setup_commands` entirely, including `cwd`. Drift detection is `setup_commands_revision` only. Name-only updates omit `files`/`skills`/`plugins`/`setup_commands` so remote confidential content is preserved. |
 
 Creating a template does not create a session. Complete drift detection is not claimed for confidential inputs.
 

@@ -827,10 +827,18 @@ func webSearchFromAPI(ctx context.Context, raw json.RawMessage) (types.Object, d
 		diags.Append(d...)
 		loc = obj
 	}
+	contextSize := types.StringValue("medium")
+	if api.ContextSize != nil && *api.ContextSize != "" {
+		contextSize = types.StringValue(*api.ContextSize)
+	}
+	mode := types.StringValue("live")
+	if api.Mode != nil && *api.Mode != "" {
+		mode = types.StringValue(*api.Mode)
+	}
 	obj, d := types.ObjectValue(webSearchAttrTypes, map[string]attr.Value{
 		"allowed_domains": domains,
-		"context_size":    stringPtrValue(api.ContextSize),
-		"mode":            stringPtrValue(api.Mode),
+		"context_size":    contextSize,
+		"mode":            mode,
 		"location":        loc,
 	})
 	diags.Append(d...)

@@ -135,7 +135,7 @@ Optional:
 Optional:
 
 - `command` (String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Shell command body. Write-only.
-- `cwd` (String) Working directory. Observable metadata.
+- `cwd` (String) Working directory. The API does not read setup commands back; drift detection is revision-based.
 
 
 <a id="nestedatt--skills"></a>

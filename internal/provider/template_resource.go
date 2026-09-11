@@ -129,7 +129,7 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 				MarkdownDescription: "Setup commands. Command bodies are write-only; change `setup_commands_revision` to send them again.",
 				NestedObject: schema.NestedAttributeObject{Attributes: map[string]schema.Attribute{
 					"command": schema.StringAttribute{Optional: true, WriteOnly: true, Sensitive: true, MarkdownDescription: "Shell command body. Write-only."},
-					"cwd":     schema.StringAttribute{Optional: true, MarkdownDescription: "Working directory. Observable metadata."},
+					"cwd":     schema.StringAttribute{Optional: true, MarkdownDescription: "Working directory. The API does not read setup commands back; drift detection is revision-based."},
 				}},
 			},
 			"env_revision":            schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to send `env` values."},

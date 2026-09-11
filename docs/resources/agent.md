@@ -163,9 +163,9 @@ Optional:
 Optional:
 
 - `allowed_domains` (List of String) Domains the search may include.
-- `context_size` (String) `low`, `medium`, or `high`.
+- `context_size` (String) `low`, `medium`, or `high`. Defaults to the API value `medium`.
 - `location` (Attributes) Approximate user location. (see [below for nested schema](#nestedatt--tools--web_search--location))
-- `mode` (String) `disabled`, `cached`, or `live`.
+- `mode` (String) `disabled`, `cached`, or `live`. Defaults to the API value `live`.
 
 <a id="nestedatt--tools--web_search--location"></a>
 ### Nested Schema for `tools.web_search.location`

@@ -307,62 +307,14 @@ func (w TemplateWrite) toMap() map[string]any {
 	w.CapabilityDirectories.apply(body, "capability_directories")
 	w.Network.apply(body, "network")
 	w.Packages.apply(body, "packages")
+	// Confidential collections are omitted unless SendConfidential is set.
+	// Sending files/skills/plugins without bytes replaces remote content.
 	if w.SendConfidential {
 		w.Files.apply(body, "files")
 		w.Skills.apply(body, "skills")
 		w.Plugins.apply(body, "plugins")
 		w.Env.apply(body, "env")
 		w.SetupCommands.apply(body, "setup_commands")
-	} else {
-		if w.Files.Present && !w.Files.Null {
-			body["files"] = publicFiles(w.Files.Value)
-		} else {
-			w.Files.apply(body, "files")
-		}
-		if w.Skills.Present && !w.Skills.Null {
-			body["skills"] = publicSkills(w.Skills.Value)
-		} else {
-			w.Skills.apply(body, "skills")
-		}
-		if w.Plugins.Present && !w.Plugins.Null {
-			body["plugins"] = publicPlugins(w.Plugins.Value)
-		} else {
-			w.Plugins.apply(body, "plugins")
-		}
 	}
 	return body
-}
-
-func publicFiles(files []TemplateFile) []TemplateFile {
-	out := make([]TemplateFile, len(files))
-	for i, f := range files {
-		out[i] = TemplateFile{Type: f.Type, Path: f.Path, FileID: f.FileID}
-	}
-	return out
-}
-
-func publicSkills(skills []TemplateSkill) []TemplateSkill {
-	out := make([]TemplateSkill, len(skills))
-	for i, s := range skills {
-		out[i] = s
-		if out[i].Source != nil {
-			src := *out[i].Source
-			src.Data = ""
-			out[i].Source = &src
-		}
-	}
-	return out
-}
-
-func publicPlugins(plugins []TemplatePlugin) []TemplatePlugin {
-	out := make([]TemplatePlugin, len(plugins))
-	for i, p := range plugins {
-		out[i] = p
-		if out[i].Source != nil {
-			src := *out[i].Source
-			src.Data = ""
-			out[i].Source = &src
-		}
-	}
-	return out
 }

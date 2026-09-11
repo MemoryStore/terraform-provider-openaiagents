@@ -46,12 +46,13 @@ type agentRecord struct {
 }
 
 type templateRecord struct {
-	Public  client.EnvironmentTemplate
-	Env     map[string]string
-	Setup   []client.SetupCommand
-	Files   []client.TemplateFile
-	Skills  []client.TemplateSkill
-	Plugins []client.TemplatePlugin
+	Public    client.EnvironmentTemplate
+	Env       map[string]string
+	Setup     []client.SetupCommand
+	Files     []client.TemplateFile
+	Skills    []client.TemplateSkill
+	Plugins   []client.TemplatePlugin
+	LastWrite []byte
 }
 
 type vaultRecord struct {
@@ -411,10 +412,14 @@ func normalizeTool(raw json.RawMessage) json.RawMessage {
 			obj["required"] = false
 		}
 	case "web_search":
-		// Hosted API returns a web_search object even when the write payload
-		// is only {"type":"web_search"}. Nested filters stay omitted unless set.
 		if _, ok := obj["type"]; !ok {
 			obj["type"] = "web_search"
+		}
+		if _, ok := obj["context_size"]; !ok {
+			obj["context_size"] = "medium"
+		}
+		if _, ok := obj["mode"]; !ok {
+			obj["mode"] = "live"
 		}
 	}
 	b, err := json.Marshal(obj)
@@ -440,7 +445,8 @@ func (s *Server) createTemplate(w http.ResponseWriter, body []byte) {
 			CapabilityDirectories: []string{},
 		},
 	}
-	applyTemplate(rec, raw, true)
+	rec.LastWrite = append([]byte(nil), body...)
+	applyTemplate(rec, raw)
 	s.mu.Lock()
 	s.templates[rec.Public.ID] = rec
 	s.mu.Unlock()
@@ -471,7 +477,8 @@ func (s *Server) updateTemplate(w http.ResponseWriter, id string, body []byte) {
 		writeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
-	applyTemplate(rec, raw, false)
+	rec.LastWrite = append([]byte(nil), body...)
+	applyTemplate(rec, raw)
 	rec.Public.UpdatedAt = time.Now().Unix()
 	writeJSON(w, http.StatusOK, publicTemplate(rec))
 }
@@ -488,7 +495,7 @@ func (s *Server) deleteTemplate(w http.ResponseWriter, id string) {
 	writeJSON(w, http.StatusOK, client.Deleted{ID: id, Object: "environment.template.deleted", Deleted: true})
 }
 
-func applyTemplate(rec *templateRecord, raw map[string]any, create bool) {
+func applyTemplate(rec *templateRecord, raw map[string]any) {
 	if v, exists := raw["name"]; exists {
 		rec.Public.Name = stringOrNil(v)
 	}
@@ -520,33 +527,19 @@ func applyTemplate(rec *templateRecord, raw map[string]any, create bool) {
 		b, _ := json.Marshal(v)
 		var files []client.TemplateFile
 		_ = json.Unmarshal(b, &files)
-		if create || hasFileData(files) {
-			rec.Files = files
-		} else if len(files) > 0 {
-			rec.Files = mergeFileMeta(rec.Files, files)
-		} else {
-			rec.Files = files
-		}
+		rec.Files = files
 	}
 	if v, exists := raw["skills"]; exists {
 		b, _ := json.Marshal(v)
 		var skills []client.TemplateSkill
 		_ = json.Unmarshal(b, &skills)
-		if create || hasSkillData(skills) {
-			rec.Skills = skills
-		} else {
-			rec.Skills = mergeSkillMeta(rec.Skills, skills)
-		}
+		rec.Skills = skills
 	}
 	if v, exists := raw["plugins"]; exists {
 		b, _ := json.Marshal(v)
 		var plugins []client.TemplatePlugin
 		_ = json.Unmarshal(b, &plugins)
-		if create || hasPluginData(plugins) {
-			rec.Plugins = plugins
-		} else {
-			rec.Plugins = mergePluginMeta(rec.Plugins, plugins)
-		}
+		rec.Plugins = plugins
 	}
 }
 
@@ -558,12 +551,6 @@ func publicTemplate(rec *templateRecord) client.EnvironmentTemplate {
 			keys = append(keys, k)
 		}
 		out.EnvKeys = keys
-	}
-	if rec.Setup != nil {
-		out.SetupCommandMetadata = make([]client.SetupCommandMeta, len(rec.Setup))
-		for i, c := range rec.Setup {
-			out.SetupCommandMetadata[i] = client.SetupCommandMeta{Cwd: c.Cwd}
-		}
 	}
 	out.Files = make([]client.TemplateFile, len(rec.Files))
 	for i, f := range rec.Files {
@@ -588,69 +575,6 @@ func publicTemplate(rec *templateRecord) client.EnvironmentTemplate {
 			cp.Source = &src
 		}
 		out.Plugins[i] = cp
-	}
-	return out
-}
-
-func hasFileData(files []client.TemplateFile) bool {
-	for _, f := range files {
-		if f.Data != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func hasSkillData(skills []client.TemplateSkill) bool {
-	for _, s := range skills {
-		if s.Source != nil && s.Source.Data != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func hasPluginData(plugins []client.TemplatePlugin) bool {
-	for _, p := range plugins {
-		if p.Source != nil && p.Source.Data != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func mergeFileMeta(stored, incoming []client.TemplateFile) []client.TemplateFile {
-	if len(incoming) == 0 {
-		return incoming
-	}
-	out := make([]client.TemplateFile, len(incoming))
-	copy(out, incoming)
-	for i := range out {
-		if out[i].Data == "" && i < len(stored) {
-			out[i].Data = stored[i].Data
-		}
-	}
-	return out
-}
-
-func mergeSkillMeta(stored, incoming []client.TemplateSkill) []client.TemplateSkill {
-	out := make([]client.TemplateSkill, len(incoming))
-	copy(out, incoming)
-	for i := range out {
-		if (out[i].Source == nil || out[i].Source.Data == "") && i < len(stored) {
-			out[i].Source = stored[i].Source
-		}
-	}
-	return out
-}
-
-func mergePluginMeta(stored, incoming []client.TemplatePlugin) []client.TemplatePlugin {
-	out := make([]client.TemplatePlugin, len(incoming))
-	copy(out, incoming)
-	for i := range out {
-		if (out[i].Source == nil || out[i].Source.Data == "") && i < len(stored) {
-			out[i].Source = stored[i].Source
-		}
 	}
 	return out
 }
@@ -1094,6 +1018,17 @@ func stringSlice(v any) []string {
 		}
 	}
 	return out
+}
+
+// TemplateLastWrite returns the raw JSON body of the last create or update for a template.
+func (s *Server) TemplateLastWrite(id string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.templates[id]
+	if !ok {
+		return nil
+	}
+	return append([]byte(nil), rec.LastWrite...)
 }
 
 // TemplateHasEnv reports whether confidential env values were stored.
