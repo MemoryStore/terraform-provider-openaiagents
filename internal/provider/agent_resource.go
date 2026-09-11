@@ -42,7 +42,7 @@ func (r *AgentResource) ValidateConfig(ctx context.Context, req resource.Validat
 	if resp.Diagnostics.HasError() || data.Tools.IsNull() || data.Tools.IsUnknown() {
 		return
 	}
-	_, d := toolsToAPI(ctx, data.Tools)
+	_, d := toolsToAPI(ctx, data.Tools, true)
 	resp.Diagnostics.Append(d...)
 }
 

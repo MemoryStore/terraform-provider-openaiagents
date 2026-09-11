@@ -3,6 +3,9 @@
 # files_revision/skills_revision/plugins_revision are content digests of
 # non-secret bundle metadata. env_revision and setup_commands_revision are
 # opaque tokens, not hashes of secrets.
+#
+# Confidential write-only values belong in an ephemeral `confidential`
+# variable (TF_VAR_confidential or a gitignored -var-file), not here.
 
 active_release = "2026-09-11.1"
 
@@ -11,6 +14,19 @@ releases = {
     model        = "gpt-6-astra"
     name         = "support"
     instructions = "Answer clearly and concisely."
+    metadata = {
+      env = "prod"
+    }
+    service_tier = "auto"
+    reasoning = {
+      effort = "low"
+    }
+    text = {
+      verbosity = "low"
+    }
+    multi_agent = {
+      enabled = true
+    }
     tools = [
       {
         type = "function"
@@ -30,11 +46,12 @@ releases = {
         {
           type = "inline"
           path = "/workspace/hello.txt"
-          data = "aGVsbG8="
         }
       ]
-      files_revision          = "sha256:nonsecret-files-2026-09-11.1"
-      setup_commands          = [{ command = "mkdir -p /workspace/reports", cwd = "/workspace" }]
+      files_revision = "sha256:nonsecret-files-2026-09-11.1"
+      setup_commands = [{
+        cwd = "/workspace"
+      }]
       setup_commands_revision = "setup-v1"
     }
   }

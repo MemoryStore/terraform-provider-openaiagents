@@ -1,3 +1,15 @@
+## Unreleased
+
+BUG FIXES:
+
+* MCP `server_url` values supplied by another resource are no longer treated as empty during plan; resolved values are validated at apply
+
+IMPROVEMENTS:
+
+* Consumer module `confidential` is an ephemeral variable for env values, command bodies, and archive bytes; `releases` holds non-secret metadata only
+* Consumer module passes `metadata`, `service_tier`, `reasoning`, `text`, and `multi_agent` through to the agent resource
+* Consumer module acceptance tests instantiate the module itself
+
 ## 0.1.3 (2026-09-11)
 
 BREAKING CHANGES:

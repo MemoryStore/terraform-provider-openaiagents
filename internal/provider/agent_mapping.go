@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-jsontypes/jsontypes"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -123,7 +124,7 @@ func agentWriteFromPlan(ctx context.Context, plan, state agentModel) (client.Age
 	}
 
 	if !plan.Tools.IsUnknown() {
-		tools, d := toolsToAPI(ctx, plan.Tools)
+		tools, d := toolsToAPI(ctx, plan.Tools, false)
 		diags.Append(d...)
 		write.Tools = client.Set(tools)
 	}
@@ -319,7 +320,7 @@ func stringPtrValue(v *string) types.String {
 	return types.StringValue(*v)
 }
 
-func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.Diagnostics) {
+func toolsToAPI(ctx context.Context, list types.List, allowUnknown bool) ([]json.RawMessage, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	if list.IsNull() {
 		return []json.RawMessage{}, nil
@@ -332,6 +333,9 @@ func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.D
 			continue
 		}
 		if elem.IsUnknown() {
+			if !allowUnknown {
+				diags.AddError("Invalid tools", fmt.Sprintf("tools[%d] has unknown values at apply", i))
+			}
 			continue
 		}
 		obj, ok := elem.(types.Object)
@@ -341,7 +345,13 @@ func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.D
 		}
 		raw, d := toolToAPI(ctx, obj)
 		diags.Append(d...)
-		if d.HasError() || len(raw) == 0 {
+		if d.HasError() {
+			continue
+		}
+		if len(raw) == 0 {
+			if !allowUnknown {
+				diags.AddError("Invalid tools", fmt.Sprintf("tools[%d] has unknown values at apply", i))
+			}
 			continue
 		}
 		out = append(out, raw)
@@ -467,8 +477,14 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 			diags.AddError("Invalid mcp tool", "mcp block is required when type is mcp")
 			return nil, diags
 		}
-		mcpBody, d := mcpToAPI(ctx, mcpObj)
+		if mcpObj.IsUnknown() {
+			return nil, diags
+		}
+		mcpBody, incomplete, d := mcpToAPI(ctx, mcpObj)
 		diags.Append(d...)
+		if incomplete || d.HasError() {
+			return nil, diags
+		}
 		for k, v := range mcpBody {
 			body[k] = v
 		}
@@ -495,7 +511,7 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 	return raw, diags
 }
 
-func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagnostics) {
+func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	var m struct {
 		ServerLabel         types.String         `tfsdk:"server_label"`
@@ -507,9 +523,15 @@ func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagn
 		Required            types.Bool           `tfsdk:"required"`
 	}
 	diags.Append(obj.As(ctx, &m, basetypes.ObjectAsOptions{})...)
+	if m.ServerLabel.IsUnknown() || m.Transport.IsUnknown() || m.AllowedTools.IsUnknown() || m.ConnectionOrigin.IsUnknown() || m.CredentialID.IsUnknown() || m.RequestMetadataJSON.IsUnknown() || m.Required.IsUnknown() {
+		return nil, true, diags
+	}
 	body := map[string]any{"server_label": m.ServerLabel.ValueString()}
-	transport, d := transportToAPI(ctx, m.Transport)
+	transport, incomplete, d := transportToAPI(ctx, m.Transport)
 	diags.Append(d...)
+	if incomplete || d.HasError() {
+		return nil, incomplete, diags
+	}
 	body["transport"] = transport
 	if !m.AllowedTools.IsNull() && !m.AllowedTools.IsUnknown() {
 		var tools []string
@@ -543,11 +565,18 @@ func mcpToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagn
 	} else {
 		body["required"] = m.Required.ValueBool()
 	}
-	return body, diags
+	return body, false, diags
 }
 
-func transportToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagnostics) {
+func transportToAPI(ctx context.Context, obj types.Object) (map[string]any, bool, diag.Diagnostics) {
 	var diags diag.Diagnostics
+	if obj.IsUnknown() {
+		return nil, true, diags
+	}
+	if obj.IsNull() {
+		diags.AddError("Invalid mcp tool", "mcp tool requires transport")
+		return nil, false, diags
+	}
 	var t struct {
 		Type      types.String `tfsdk:"type"`
 		ServerURL types.String `tfsdk:"server_url"`
@@ -558,11 +587,27 @@ func transportToAPI(ctx context.Context, obj types.Object) (map[string]any, diag
 		EnvVars   types.List   `tfsdk:"env_vars"`
 	}
 	diags.Append(obj.As(ctx, &t, basetypes.ObjectAsOptions{})...)
-	body := map[string]any{"type": t.Type.ValueString()}
+	if t.Type.IsUnknown() || t.ServerURL.IsUnknown() || t.Headers.IsUnknown() || t.Command.IsUnknown() || t.Cwd.IsUnknown() || t.Args.IsUnknown() || t.EnvVars.IsUnknown() {
+		return nil, true, diags
+	}
+	typ := t.Type.ValueString()
+	switch typ {
+	case "http":
+		if t.ServerURL.IsNull() || strings.TrimSpace(t.ServerURL.ValueString()) == "" {
+			diags.AddError("Invalid mcp tool", "mcp http transport requires server_url")
+			return nil, false, diags
+		}
+	case "stdio":
+		if t.Command.IsNull() || strings.TrimSpace(t.Command.ValueString()) == "" || t.Cwd.IsNull() || strings.TrimSpace(t.Cwd.ValueString()) == "" {
+			diags.AddError("Invalid mcp tool", "mcp stdio transport requires command and cwd")
+			return nil, false, diags
+		}
+	}
+	body := map[string]any{"type": typ}
 	if !t.ServerURL.IsNull() {
 		body["server_url"] = t.ServerURL.ValueString()
 	}
-	if !t.Headers.IsNull() && !t.Headers.IsUnknown() {
+	if !t.Headers.IsNull() {
 		headers := map[string]string{}
 		diags.Append(t.Headers.ElementsAs(ctx, &headers, false)...)
 		body["headers"] = headers
@@ -573,17 +618,17 @@ func transportToAPI(ctx context.Context, obj types.Object) (map[string]any, diag
 	if !t.Cwd.IsNull() {
 		body["cwd"] = t.Cwd.ValueString()
 	}
-	if !t.Args.IsNull() && !t.Args.IsUnknown() {
+	if !t.Args.IsNull() {
 		var args []string
 		diags.Append(t.Args.ElementsAs(ctx, &args, false)...)
 		body["args"] = args
 	}
-	if !t.EnvVars.IsNull() && !t.EnvVars.IsUnknown() {
+	if !t.EnvVars.IsNull() {
 		var env []string
 		diags.Append(t.EnvVars.ElementsAs(ctx, &env, false)...)
 		body["env_vars"] = env
 	}
-	return body, diags
+	return body, false, diags
 }
 
 func webSearchToAPI(ctx context.Context, obj types.Object) (map[string]any, diag.Diagnostics) {

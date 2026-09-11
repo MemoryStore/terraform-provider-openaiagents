@@ -9,11 +9,28 @@ terraform {
 }
 
 variable "releases" {
-  description = "Retained OpenAI deployments keyed by compiler release ID. Removing a key destroys that release's remote objects."
+  description = "Retained OpenAI deployments keyed by compiler release ID. Non-secret metadata only. Removing a key destroys that release's remote objects."
   type = map(object({
     model        = string
     name         = optional(string)
     instructions = optional(string)
+    metadata     = optional(map(string))
+    service_tier = optional(string)
+    reasoning = optional(object({
+      effort  = optional(string)
+      summary = optional(string)
+    }))
+    text = optional(object({
+      verbosity = optional(string)
+      format = optional(object({
+        type        = string
+        schema_json = optional(string)
+      }))
+    }))
+    multi_agent = optional(object({
+      enabled                  = bool
+      max_concurrent_subagents = optional(number)
+    }))
     tools = optional(list(object({
       type = string
       function = optional(object({
@@ -70,7 +87,6 @@ variable "releases" {
         type    = string
         path    = string
         file_id = optional(string)
-        data    = optional(string)
       })))
       files_revision = optional(string)
       skills = optional(list(object({
@@ -79,7 +95,6 @@ variable "releases" {
         description       = optional(string)
         skill_id          = optional(string)
         version           = optional(string)
-        source_data       = optional(string)
         source_media_type = optional(string)
       })))
       skills_revision = optional(string)
@@ -87,19 +102,30 @@ variable "releases" {
         type              = string
         name              = optional(string)
         description       = optional(string)
-        source_data       = optional(string)
         source_media_type = optional(string)
       })))
       plugins_revision = optional(string)
-      env              = optional(map(string))
       env_revision     = optional(string)
       setup_commands = optional(list(object({
-        command = optional(string)
-        cwd     = optional(string)
+        cwd = optional(string)
       })))
       setup_commands_revision = optional(string)
     }))
   }))
+}
+
+variable "confidential" {
+  description = "Write-only values keyed by the same release ID as var.releases. Never put these in ordinary variables or saved plans. Pass via an ephemeral variable, TF_VAR_confidential, or a gitignored -var-file."
+  type = map(object({
+    env                  = optional(map(string))
+    setup_command_bodies = optional(list(string))
+    file_data            = optional(list(string))
+    skill_data           = optional(list(string))
+    plugin_data          = optional(list(string))
+  }))
+  ephemeral = true
+  sensitive = true
+  default   = {}
 }
 
 variable "active_release" {
@@ -118,6 +144,11 @@ resource "openaiagents_agent" "release" {
   model        = each.value.model
   name         = each.value.name
   instructions = each.value.instructions
+  metadata     = each.value.metadata
+  service_tier = each.value.service_tier
+  reasoning    = each.value.reasoning
+  text         = each.value.text
+  multi_agent  = each.value.multi_agent
   tools        = each.value.tools
 }
 
@@ -127,19 +158,49 @@ resource "openaiagents_environment_template" "release" {
     if v.environment_template != null
   }
 
-  name                    = each.value.name
-  capability_directories  = each.value.capability_directories
-  network                 = each.value.network
-  packages                = each.value.packages
-  files                   = each.value.files
-  files_revision          = each.value.files_revision
-  skills                  = each.value.skills
-  skills_revision         = each.value.skills_revision
-  plugins                 = each.value.plugins
-  plugins_revision        = each.value.plugins_revision
-  env                     = each.value.env
-  env_revision            = each.value.env_revision
-  setup_commands          = each.value.setup_commands
+  name                   = each.value.name
+  capability_directories = each.value.capability_directories
+  network                = each.value.network
+  packages               = each.value.packages
+  files = [
+    for i, f in coalesce(each.value.files, []) : {
+      type    = f.type
+      path    = f.path
+      file_id = f.file_id
+      data    = try(var.confidential[each.key].file_data[i], null)
+    }
+  ]
+  files_revision = each.value.files_revision
+  skills = [
+    for i, s in coalesce(each.value.skills, []) : {
+      type              = s.type
+      name              = s.name
+      description       = s.description
+      skill_id          = s.skill_id
+      version           = s.version
+      source_media_type = s.source_media_type
+      source_data       = try(var.confidential[each.key].skill_data[i], null)
+    }
+  ]
+  skills_revision = each.value.skills_revision
+  plugins = [
+    for i, p in coalesce(each.value.plugins, []) : {
+      type              = p.type
+      name              = p.name
+      description       = p.description
+      source_media_type = p.source_media_type
+      source_data       = try(var.confidential[each.key].plugin_data[i], null)
+    }
+  ]
+  plugins_revision = each.value.plugins_revision
+  env              = try(var.confidential[each.key].env, null)
+  env_revision     = each.value.env_revision
+  setup_commands = [
+    for i, c in coalesce(each.value.setup_commands, []) : {
+      cwd     = c.cwd
+      command = try(var.confidential[each.key].setup_command_bodies[i], null)
+    }
+  ]
   setup_commands_revision = each.value.setup_commands_revision
 }
 

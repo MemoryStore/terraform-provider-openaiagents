@@ -220,6 +220,36 @@ resource "openaiagents_agent" "test" {
 	})
 }
 
+func TestAccAgentResourceComputedMCPURL(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_vault" "endpoint" {
+  name = "mcp-endpoint"
+}
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  tools = [{
+    type = "mcp"
+    mcp = {
+      server_label = "docs"
+      transport = {
+        type       = "http"
+        server_url = "https://mcp.example.com/${openaiagents_vault.endpoint.id}"
+      }
+    }
+  }]
+}
+`,
+				Check: resource.TestCheckResourceAttrSet("openaiagents_agent.test", "id"),
+			},
+		},
+	})
+}
+
 func TestAccAgentResourceHTTPTransportRequiresURL(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		IsUnitTest:               true,
