@@ -8,7 +8,7 @@ Provider source: [`MemoryStore/openaiagents`](https://registry.terraform.io/prov
 Resource prefix: `openaiagents_*`  
 Terraform: `>= 1.11` (write-only arguments)
 
-Published on the Terraform Registry as [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents) (`v0.1.3`).
+Published on the Terraform Registry as [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents) (`v0.1.4`).
 
 ## Resources and data sources
 
