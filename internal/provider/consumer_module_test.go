@@ -106,7 +106,7 @@ confidential = {
 	if err := os.WriteFile(filepath.Join(dir, "terraform.tfvars"), []byte(tfvars), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rc := fmt.Sprintf("provider_installation {\n  dev_overrides {\n    \"MemoryStore/openaiagents\" = %q\n  }\n  direct {}\n}\n", filepath.Dir(providerBin))
+	rc := fmt.Sprintf("provider_installation {\n  dev_overrides {\n    \"MemoryStore/openaiagents\" = %q\n  }\n}\n", filepath.Dir(providerBin))
 	if err := os.WriteFile(filepath.Join(dir, "terraformrc"), []byte(rc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -132,31 +132,16 @@ func TestAccConsumerGeneratedDeployment(t *testing.T) {
 	if _, err := exec.LookPath("terraform"); err != nil {
 		t.Skip("terraform CLI is required to test the consumer module")
 	}
-	install := exec.Command("go", "install", ".")
-	install.Dir = repoRoot()
-	if out, err := install.CombinedOutput(); err != nil {
-		t.Fatalf("go install: %v\n%s", err, out)
-	}
-	gobin, err := exec.Command("go", "env", "GOBIN").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	binDir := strings.TrimSpace(string(gobin))
-	if binDir == "" {
-		gopath, err := exec.Command("go", "env", "GOPATH").Output()
-		if err != nil {
-			t.Fatal(err)
-		}
-		binDir = filepath.Join(strings.TrimSpace(string(gopath)), "bin")
-	}
+	binDir := t.TempDir()
 	providerBin := filepath.Join(binDir, "terraform-provider-openaiagents")
-	if _, err := os.Stat(providerBin); err != nil {
-		t.Fatalf("provider binary missing: %v", err)
+	build := exec.Command("go", "build", "-o", providerBin, ".")
+	build.Dir = repoRoot()
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build: %v\n%s", err, out)
 	}
 
 	dir := t.TempDir()
 	writeConsumerHarness(t, dir, "2026-09-11.1", providerBin)
-	terraformIn(t, dir, "init", "-input=false", "-backend=false")
 	terraformIn(t, dir, "apply", "-auto-approve", "-input=false")
 	list := terraformIn(t, dir, "state", "list")
 	for _, want := range []string{

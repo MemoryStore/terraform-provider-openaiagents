@@ -9,6 +9,7 @@ IMPROVEMENTS:
 * Consumer module `confidential` is an ephemeral variable for env values, command bodies, and archive bytes; `releases` holds non-secret metadata only
 * Consumer module passes `metadata`, `service_tier`, `reasoning`, `text`, and `multi_agent` through to the agent resource
 * Consumer module acceptance tests instantiate the module itself
+* Consumer module tests build a throwaway provider binary and do not call the Registry
 
 ## 0.1.3 (2026-09-11)
 
