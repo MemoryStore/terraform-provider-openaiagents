@@ -32,5 +32,5 @@ resource "openaiagents_environment_template" "skills" {
       source_media_type = "application/zip"
     }
   ]
-  plugins_revision = 1
+  plugins_revision = "1"
 }

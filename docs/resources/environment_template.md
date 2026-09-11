@@ -3,12 +3,12 @@
 page_title: "openaiagents_environment_template Resource - openaiagents"
 subcategory: ""
 description: |-
-  A reusable OpenAI-hosted environment template (POST /v1/agents/environments/templates). Creating a template does not create a session or a running environment. Environment values, setup-command bodies, and inline/archive bytes are write-only; the API does not read them back. Use the corresponding *_revision attributes to deploy changes. Drift detection for those confidential inputs is revision-based only.
+  A reusable OpenAI-hosted environment template (POST /v1/agents/environments/templates). Creating a template does not create a session or a running environment. Environment values, setup-command bodies, and inline/archive bytes are write-only; the API does not read them back. Use the corresponding *_revision attributes to deploy write-only changes. files_revision, skills_revision, and plugins_revision accept a compiler content digest of non-secret bundle metadata. env_revision and setup_commands_revision are opaque change tokens; do not hash secret values into them.
 ---
 
 # openaiagents_environment_template (Resource)
 
-A reusable OpenAI-hosted environment template (`POST /v1/agents/environments/templates`). Creating a template does not create a session or a running environment. Environment values, setup-command bodies, and inline/archive bytes are write-only; the API does not read them back. Use the corresponding `*_revision` attributes to deploy changes. Drift detection for those confidential inputs is revision-based only.
+A reusable OpenAI-hosted environment template (`POST /v1/agents/environments/templates`). Creating a template does not create a session or a running environment. Environment values, setup-command bodies, and inline/archive bytes are write-only; the API does not read them back. Use the corresponding `*_revision` attributes to deploy write-only changes. `files_revision`, `skills_revision`, and `plugins_revision` accept a compiler content digest of non-secret bundle metadata. `env_revision` and `setup_commands_revision` are opaque change tokens; do not hash secret values into them.
 
 ## Example Usage
 
@@ -47,7 +47,7 @@ resource "openaiagents_environment_template" "skills" {
       source_media_type = "application/zip"
     }
   ]
-  plugins_revision = 1
+  plugins_revision = "1"
 }
 ```
 
@@ -60,18 +60,18 @@ resource "openaiagents_environment_template" "skills" {
 
 - `capability_directories` (List of String) Absolute capability directories discovered by the harness.
 - `env` (Map of String, Sensitive, [Write-only](https://developer.hashicorp.com/terraform/language/resources/ephemeral#write-only-arguments)) Environment variable values. Write-only; not read back. Change `env_revision` to send value updates. Adding or removing keys while `env` remains in configuration also sends `env`.
-- `env_revision` (Number) Non-secret revision. Increment to send `env` values.
+- `env_revision` (String) Opaque change token. Change it to send `env` values. Do not hash secret values.
 - `files` (Attributes List) Workspace files. Inline `data` is write-only. Changing path, type, or `file_id` also sends the group when `data` remains in configuration; otherwise increment `files_revision`. (see [below for nested schema](#nestedatt--files))
-- `files_revision` (Number) Non-secret revision. Increment to upload inline file bytes.
+- `files_revision` (String) Change trigger for inline file bytes. Prefer a content digest of non-secret file metadata and bundle identity, not a hash of file bytes.
 - `name` (String) Display name.
 - `network` (Attributes) Network policy for hosted environments. (see [below for nested schema](#nestedatt--network))
 - `packages` (Attributes) Packages to install. (see [below for nested schema](#nestedatt--packages))
 - `plugins` (Attributes List) Inline plugin ZIP archives. Archive bytes are write-only. (see [below for nested schema](#nestedatt--plugins))
-- `plugins_revision` (Number) Non-secret revision. Increment to upload plugin archives.
+- `plugins_revision` (String) Change trigger for plugin archives. Prefer a content digest of non-secret plugin metadata, not a hash of archive bytes.
 - `setup_commands` (Attributes List) Setup commands. Command bodies are write-only. Changing `cwd` also sends the group when `command` remains in configuration; otherwise increment `setup_commands_revision`. (see [below for nested schema](#nestedatt--setup_commands))
-- `setup_commands_revision` (Number) Non-secret revision. Increment to send setup command bodies.
+- `setup_commands_revision` (String) Opaque change token. Change it to send setup command bodies. Do not hash secret command text.
 - `skills` (Attributes List) Skills: inline archives or Skills API references. Archive bytes are write-only. (see [below for nested schema](#nestedatt--skills))
-- `skills_revision` (Number) Non-secret revision. Increment to upload skill archives.
+- `skills_revision` (String) Change trigger for skill archives. Prefer a content digest of non-secret skill metadata and references, not a hash of archive bytes.
 
 ### Read-Only
 

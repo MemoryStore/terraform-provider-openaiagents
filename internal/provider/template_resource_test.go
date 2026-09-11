@@ -35,14 +35,14 @@ resource "openaiagents_environment_template" "test" {
   env = {
     TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
   }
-  env_revision = 1
+  env_revision = "1"
   setup_commands = [
     {
       command = "CANARY_SECRET_DO_NOT_LEAK"
       cwd     = "/workspace"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
   files = [
     {
       type = "inline"
@@ -50,7 +50,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
   skills = [
     {
       type    = "skill_reference"
@@ -94,14 +94,14 @@ resource "openaiagents_environment_template" "test" {
   env = {
     TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
   }
-  env_revision = 1
+  env_revision = "1"
   setup_commands = [
     {
       command = "CANARY_SECRET_DO_NOT_LEAK"
       cwd     = "/workspace"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
   files = [
     {
       type = "inline"
@@ -109,7 +109,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
   skills = [
     {
       type    = "skill_reference"
@@ -131,9 +131,9 @@ resource "openaiagents_environment_template" "test" {
   env = {
     TOKEN = "NEW_CANARY"
   }
-  env_revision = 2
-  files_revision = 1
-  setup_commands_revision = 1
+  env_revision = "2"
+  files_revision = "1"
+  setup_commands_revision = "1"
 }
 `,
 				Check: func(s *terraform.State) error {
@@ -146,6 +146,33 @@ resource "openaiagents_environment_template" "test" {
 					}
 					return nil
 				},
+			},
+		},
+	})
+}
+
+func TestAccEnvironmentTemplateImportObservable(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_environment_template" "test" {
+  name = "hosted"
+  capability_directories = ["/workspace/capabilities/skills"]
+  network = {
+    access = "restricted"
+    allowed_domains = ["api.example.com"]
+  }
+}
+`,
+			},
+			{
+				ResourceName:            "openaiagents_environment_template.test",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"env", "env_revision", "files_revision", "skills_revision", "plugins_revision", "setup_commands_revision"},
 			},
 		},
 	})
@@ -168,7 +195,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
   plugins = [
     {
       type              = "inline"
@@ -178,7 +205,7 @@ resource "openaiagents_environment_template" "test" {
       source_media_type = "application/zip"
     }
   ]
-  plugins_revision = 1
+  plugins_revision = "1"
 }
 `,
 				Check: func(s *terraform.State) error {
@@ -200,7 +227,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
   plugins = [
     {
       type              = "inline"
@@ -210,7 +237,7 @@ resource "openaiagents_environment_template" "test" {
       source_media_type = "application/zip"
     }
   ]
-  plugins_revision = 1
+  plugins_revision = "1"
 }
 `,
 				Check: func(s *terraform.State) error {
@@ -251,7 +278,7 @@ resource "openaiagents_environment_template" "test" {
       cwd     = "/workspace"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -277,7 +304,7 @@ resource "openaiagents_environment_template" "test" {
       cwd     = "/workspace"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
 }
 `,
 				ConfigPlanChecks: resource.ConfigPlanChecks{
@@ -304,7 +331,7 @@ resource "openaiagents_environment_template" "test" {
       cwd     = "/workspace"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
 }
 `,
 			},
@@ -318,7 +345,7 @@ resource "openaiagents_environment_template" "test" {
       cwd     = "/workspace/sub"
     }
   ]
-  setup_commands_revision = 1
+  setup_commands_revision = "1"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -356,7 +383,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
 }
 `,
 			},
@@ -371,7 +398,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
@@ -408,7 +435,7 @@ resource "openaiagents_environment_template" "test" {
       data = "CANARY_SECRET_DO_NOT_LEAK"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
 }
 `,
 			},
@@ -422,7 +449,7 @@ resource "openaiagents_environment_template" "test" {
       path = "/workspace/b.txt"
     }
   ]
-  files_revision = 1
+  files_revision = "1"
 }
 `,
 				ExpectError: regexp.MustCompile("files_revision"),
@@ -443,7 +470,7 @@ resource "openaiagents_environment_template" "test" {
   env = {
     TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
   }
-  env_revision = 1
+  env_revision = "1"
 }
 `,
 			},
@@ -455,7 +482,7 @@ resource "openaiagents_environment_template" "test" {
     TOKEN = "CANARY_SECRET_DO_NOT_LEAK"
     EXTRA = "second"
   }
-  env_revision = 1
+  env_revision = "1"
 }
 `,
 				ExpectError: regexp.MustCompile("env_revision"),

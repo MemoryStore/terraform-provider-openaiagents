@@ -14,6 +14,86 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
+func TestToolsToAPISkipsUnknownFunctionSchema(t *testing.T) {
+	ctx := context.Background()
+	fn, diags := types.ObjectValue(functionAttrTypes, map[string]attr.Value{
+		"name":            types.StringValue("lookup"),
+		"description":     types.StringValue("Look up a record"),
+		"parameters_json": jsontypes.NewNormalizedUnknown(),
+		"defer_loading":   types.BoolValue(false),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	tool, diags := types.ObjectValue(toolAttrTypes, map[string]attr.Value{
+		"type":                      types.StringValue("function"),
+		"function":                  fn,
+		"programmatic_tool_calling": types.ObjectNull(ptcAttrTypes),
+		"mcp":                       types.ObjectNull(mcpAttrTypes),
+		"web_search":                types.ObjectNull(webSearchAttrTypes),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	list, diags := types.ListValue(types.ObjectType{AttrTypes: toolAttrTypes}, []attr.Value{tool})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	raw, diags := toolsToAPI(ctx, list)
+	if diags.HasError() {
+		t.Fatalf("unknown function schema must wait until apply, got %v", diags)
+	}
+	if len(raw) != 0 {
+		t.Fatalf("expected no encoded tools while schema is unknown, got %d", len(raw))
+	}
+}
+
+func TestToolsToAPIRejectsConflictingVariant(t *testing.T) {
+	ctx := context.Background()
+	fn, diags := types.ObjectValue(functionAttrTypes, map[string]attr.Value{
+		"name":            types.StringValue("lookup"),
+		"description":     types.StringValue("Look up"),
+		"parameters_json": jsontypes.NewNormalizedValue(`{"type":"object"}`),
+		"defer_loading":   types.BoolValue(false),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	mcp, diags := types.ObjectValue(mcpAttrTypes, map[string]attr.Value{
+		"server_label":          types.StringValue("docs"),
+		"transport":             types.ObjectNull(transportAttrTypes),
+		"allowed_tools":         types.ListNull(types.StringType),
+		"connection_origin":     types.StringNull(),
+		"credential_id":         types.StringNull(),
+		"request_metadata_json": jsontypes.NewNormalizedNull(),
+		"required":              types.BoolValue(false),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	tool, diags := types.ObjectValue(toolAttrTypes, map[string]attr.Value{
+		"type":                      types.StringValue("function"),
+		"function":                  fn,
+		"programmatic_tool_calling": types.ObjectNull(ptcAttrTypes),
+		"mcp":                       mcp,
+		"web_search":                types.ObjectNull(webSearchAttrTypes),
+	})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	list, diags := types.ListValue(types.ObjectType{AttrTypes: toolAttrTypes}, []attr.Value{tool})
+	if diags.HasError() {
+		t.Fatal(diags)
+	}
+	_, diags = toolsToAPI(ctx, list)
+	if !diags.HasError() {
+		t.Fatal("expected conflicting tool block error")
+	}
+	if !strings.Contains(diags.Errors()[0].Detail(), "must not set mcp") && !strings.Contains(diags.Errors()[0].Summary(), "Conflicting") {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+}
+
 func TestToolsRoundTripAdditionalPropertiesFalse(t *testing.T) {
 	ctx := context.Background()
 	params := `{"additionalProperties":false,"properties":{"id":{"type":"string"}},"required":["id"],"type":"object"}`

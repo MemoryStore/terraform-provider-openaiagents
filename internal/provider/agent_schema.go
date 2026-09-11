@@ -8,7 +8,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/mapdefault"
@@ -170,8 +169,8 @@ func agentResourceSchema() schema.Schema {
 					"max_concurrent_subagents": schema.Int64Attribute{
 						Optional:            true,
 						Computed:            true,
-						Default:             int64default.StaticInt64(6),
-						MarkdownDescription: "Maximum concurrent subagents. Defaults to 6 when enabled.",
+						PlanModifiers:       []planmodifier.Int64{maxConcurrentPlanModifier()},
+						MarkdownDescription: "Maximum concurrent subagents. Defaults to 6 when enabled; omitted when disabled to match API readback.",
 					},
 				},
 			},

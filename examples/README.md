@@ -6,6 +6,8 @@ Set `OPENAI_API_KEY` in the environment. Do not check keys into this repository.
 
 Terraform 1.11 or later is required for write-only arguments.
 
+`examples/consumer` is the compiler-facing deployment module. It takes typed tool objects (nested `function = { ... }`, not flat Agents API JSON), a retained `releases` map, and `active_release`. Artifact uploads use string change triggers: content digests for non-secret bundles, opaque tokens for confidential `env` and setup commands. Rollback selects a retained key; cleanup is removing that key.
+
 The Registry source is [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents). For local builds, a development override is optional:
 
 ```hcl

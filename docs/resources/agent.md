@@ -54,7 +54,7 @@ Required:
 
 Optional:
 
-- `max_concurrent_subagents` (Number) Maximum concurrent subagents. Defaults to 6 when enabled.
+- `max_concurrent_subagents` (Number) Maximum concurrent subagents. Defaults to 6 when enabled; omitted when disabled to match API readback.
 
 
 <a id="nestedatt--reasoning"></a>

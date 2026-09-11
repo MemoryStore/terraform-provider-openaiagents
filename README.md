@@ -62,7 +62,7 @@ Ordinary tests and CI never contact `api.openai.com`. Live acceptance is opt-in 
 
 ## Secrets
 
-Bearer tokens, OAuth tokens, client secrets, environment values, setup-command bodies, and archive bytes are write-only. They are not stored in state. Use non-secret revision attributes (`token_revision`, `env_revision`, `files_revision`, …) to rotate or re-upload.
+Bearer tokens, OAuth tokens, client secrets, environment values, setup-command bodies, and archive bytes are write-only. They are not stored in state. Use non-secret revision attributes to rotate or re-upload. Template `files_revision` / `skills_revision` / `plugins_revision` are string change triggers (content digest of non-secret bundles). `env_revision` and `setup_commands_revision` are opaque tokens; do not hash secrets. Credential `token_revision` remains a number.
 
 See `examples/resources/openaiagents_vault_credential` for an ephemeral token input.
 

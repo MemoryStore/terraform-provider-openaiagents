@@ -42,11 +42,11 @@ type templateModel struct {
 	Plugins               types.List   `tfsdk:"plugins"`
 	Env                   types.Map    `tfsdk:"env"`
 	SetupCommands         types.List   `tfsdk:"setup_commands"`
-	EnvRevision           types.Int64  `tfsdk:"env_revision"`
-	SetupCommandsRevision types.Int64  `tfsdk:"setup_commands_revision"`
-	FilesRevision         types.Int64  `tfsdk:"files_revision"`
-	SkillsRevision        types.Int64  `tfsdk:"skills_revision"`
-	PluginsRevision       types.Int64  `tfsdk:"plugins_revision"`
+	EnvRevision           types.String `tfsdk:"env_revision"`
+	SetupCommandsRevision types.String `tfsdk:"setup_commands_revision"`
+	FilesRevision         types.String `tfsdk:"files_revision"`
+	SkillsRevision        types.String `tfsdk:"skills_revision"`
+	PluginsRevision       types.String `tfsdk:"plugins_revision"`
 	EnvKeys               types.List   `tfsdk:"env_keys"`
 }
 
@@ -59,7 +59,9 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 		MarkdownDescription: "A reusable OpenAI-hosted environment template (`POST /v1/agents/environments/templates`). " +
 			"Creating a template does not create a session or a running environment. " +
 			"Environment values, setup-command bodies, and inline/archive bytes are write-only; the API does not read them back. " +
-			"Use the corresponding `*_revision` attributes to deploy changes. Drift detection for those confidential inputs is revision-based only.",
+			"Use the corresponding `*_revision` attributes to deploy write-only changes. " +
+			"`files_revision`, `skills_revision`, and `plugins_revision` accept a compiler content digest of non-secret bundle metadata. " +
+			"`env_revision` and `setup_commands_revision` are opaque change tokens; do not hash secret values into them.",
 		Attributes: map[string]schema.Attribute{
 			"id":                     schema.StringAttribute{Computed: true, MarkdownDescription: "Remote template ID.", PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()}},
 			"object":                 schema.StringAttribute{Computed: true, MarkdownDescription: "Object type."},
@@ -133,11 +135,11 @@ func (r *EnvironmentTemplateResource) Schema(_ context.Context, _ resource.Schem
 					"cwd":     schema.StringAttribute{Optional: true, MarkdownDescription: "Working directory. The API does not read setup commands back; drift detection is revision-based."},
 				}},
 			},
-			"env_revision":            schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to send `env` values."},
-			"setup_commands_revision": schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to send setup command bodies."},
-			"files_revision":          schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to upload inline file bytes."},
-			"skills_revision":         schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to upload skill archives."},
-			"plugins_revision":        schema.Int64Attribute{Optional: true, MarkdownDescription: "Non-secret revision. Increment to upload plugin archives."},
+			"env_revision":            schema.StringAttribute{Optional: true, MarkdownDescription: "Opaque change token. Change it to send `env` values. Do not hash secret values."},
+			"setup_commands_revision": schema.StringAttribute{Optional: true, MarkdownDescription: "Opaque change token. Change it to send setup command bodies. Do not hash secret command text."},
+			"files_revision":          schema.StringAttribute{Optional: true, MarkdownDescription: "Change trigger for inline file bytes. Prefer a content digest of non-secret file metadata and bundle identity, not a hash of file bytes."},
+			"skills_revision":         schema.StringAttribute{Optional: true, MarkdownDescription: "Change trigger for skill archives. Prefer a content digest of non-secret skill metadata and references, not a hash of archive bytes."},
+			"plugins_revision":        schema.StringAttribute{Optional: true, MarkdownDescription: "Change trigger for plugin archives. Prefer a content digest of non-secret plugin metadata, not a hash of archive bytes."},
 			"env_keys":                schema.ListAttribute{Computed: true, ElementType: types.StringType, MarkdownDescription: "Environment variable names returned by the API, if any. Values are never returned."},
 		},
 	}
@@ -158,7 +160,7 @@ func (r *EnvironmentTemplateResource) ModifyPlan(ctx context.Context, req resour
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if !revisionChanged(plan.EnvRevision, state.EnvRevision) && envKeysChanged(ctx, config.Env, state.EnvKeys) {
+	if !stringRevisionChanged(plan.EnvRevision, state.EnvRevision) && envKeysChanged(ctx, config.Env, state.EnvKeys) {
 		resp.Diagnostics.AddError(
 			"env_revision required",
 			"env keys changed without env_revision; increment env_revision and keep env in configuration",
@@ -270,4 +272,17 @@ func revisionChanged(plan, state types.Int64) bool {
 		return true
 	}
 	return plan.ValueInt64() != state.ValueInt64()
+}
+
+func stringRevisionChanged(plan, state types.String) bool {
+	if plan.IsUnknown() || state.IsUnknown() {
+		return false
+	}
+	if plan.IsNull() && state.IsNull() {
+		return false
+	}
+	if plan.IsNull() || state.IsNull() {
+		return true
+	}
+	return plan.ValueString() != state.ValueString()
 }

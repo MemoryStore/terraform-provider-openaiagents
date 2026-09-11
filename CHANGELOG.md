@@ -1,3 +1,17 @@
+## Unreleased
+
+BREAKING CHANGES:
+
+* Template `files_revision`, `skills_revision`, `plugins_revision`, `env_revision`, and `setup_commands_revision` are now strings. Use a content digest for non-secret bundles and an opaque token for confidential `env` and setup commands.
+
+IMPROVEMENTS:
+
+* The consumer module takes typed nested tools, a retained `releases` map, and `active_release` instead of flattening Agents API JSON into the Terraform schema
+* Unknown function `parameters_json` waits until apply instead of failing validation
+* Conflicting tool variant blocks are rejected instead of silently discarded
+* Disabled `multi_agent` no longer plans `max_concurrent_subagents = 6`
+* Template import reads back observable network, packages, files, skills, and plugins
+
 ## 0.1.2 (2026-09-11)
 
 BUG FIXES:

@@ -56,6 +56,44 @@ func (m typedNestedObjectModifier) PlanModifyObject(ctx context.Context, req pla
 	resp.PlanValue = m.defaultObj
 }
 
+type maxConcurrentModifier struct{}
+
+func (m maxConcurrentModifier) Description(context.Context) string {
+	return "defaults max_concurrent_subagents to 6 only when multi_agent is enabled"
+}
+
+func (m maxConcurrentModifier) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+
+func (m maxConcurrentModifier) PlanModifyInt64(ctx context.Context, req planmodifier.Int64Request, resp *planmodifier.Int64Response) {
+	var enabled types.Bool
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, req.Path.ParentPath().AtName("enabled"), &enabled)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if enabled.IsUnknown() {
+		resp.PlanValue = types.Int64Unknown()
+		return
+	}
+	if enabled.IsNull() || !enabled.ValueBool() {
+		resp.PlanValue = types.Int64Null()
+		return
+	}
+	if !req.ConfigValue.IsNull() && !req.ConfigValue.IsUnknown() {
+		return
+	}
+	if !req.StateValue.IsNull() && !req.StateValue.IsUnknown() {
+		resp.PlanValue = req.StateValue
+		return
+	}
+	resp.PlanValue = types.Int64Value(6)
+}
+
+func maxConcurrentPlanModifier() planmodifier.Int64 {
+	return maxConcurrentModifier{}
+}
+
 func ptcPlanModifier() planmodifier.Object {
 	return typedNestedObjectModifier{
 		toolType:  "programmatic_tool_calling",

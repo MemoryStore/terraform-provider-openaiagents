@@ -246,6 +246,74 @@ resource "openaiagents_agent" "test" {
 	})
 }
 
+func TestAccAgentResourceDisabledMultiAgent(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  multi_agent = {
+    enabled = false
+  }
+}
+`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("openaiagents_agent.test", "multi_agent.enabled", "false"),
+					resource.TestCheckNoResourceAttr("openaiagents_agent.test", "multi_agent.max_concurrent_subagents"),
+				),
+			},
+			{
+				Config: testConfig() + `
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  multi_agent = {
+    enabled = false
+  }
+}
+`,
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+func TestAccAgentResourceConflictingToolBlock(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		IsUnitTest:               true,
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: testConfig() + `
+resource "openaiagents_agent" "test" {
+  model = "gpt-6-astra"
+  tools = [{
+    type = "function"
+    function = {
+      name        = "lookup"
+      description = "Look up"
+      parameters_json = jsonencode({ type = "object" })
+    }
+    mcp = {
+      server_label = "docs"
+      transport = {
+        type       = "http"
+        server_url = "https://developers.openai.com/mcp"
+      }
+    }
+  }]
+}
+`,
+				ExpectError: regexp.MustCompile("must not set mcp"),
+			},
+		},
+	})
+}
+
 func TestAccAgentResourceToolReorder(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		IsUnitTest:               true,

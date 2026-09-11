@@ -83,11 +83,11 @@ func templateWriteFrom(ctx context.Context, plan, state, config templateModel, c
 		write.Packages = client.Null[client.Packages]()
 	}
 
-	sendEnv := create || revisionChanged(plan.EnvRevision, state.EnvRevision)
-	sendSetup := create || revisionChanged(plan.SetupCommandsRevision, state.SetupCommandsRevision)
-	sendFiles := create || revisionChanged(plan.FilesRevision, state.FilesRevision)
-	sendSkills := create || revisionChanged(plan.SkillsRevision, state.SkillsRevision)
-	sendPlugins := create || revisionChanged(plan.PluginsRevision, state.PluginsRevision)
+	sendEnv := create || stringRevisionChanged(plan.EnvRevision, state.EnvRevision)
+	sendSetup := create || stringRevisionChanged(plan.SetupCommandsRevision, state.SetupCommandsRevision)
+	sendFiles := create || stringRevisionChanged(plan.FilesRevision, state.FilesRevision)
+	sendSkills := create || stringRevisionChanged(plan.SkillsRevision, state.SkillsRevision)
+	sendPlugins := create || stringRevisionChanged(plan.PluginsRevision, state.PluginsRevision)
 	if !create && !sendSetup && gatedListPublicChanged(plan.SetupCommands, state.SetupCommands, []string{"cwd"}) {
 		sendSetup = true
 	}
@@ -327,6 +327,24 @@ func pluginsFromConfig(ctx context.Context, list types.List, includeData bool) (
 	return out, diags
 }
 
+func attrKnown(v interface {
+	IsNull() bool
+	IsUnknown() bool
+}) bool {
+	return !v.IsNull() && !v.IsUnknown()
+}
+
+func templateImport(prior templateModel) bool {
+	return prior.Name.IsNull() &&
+		prior.CapabilityDirectories.IsNull() &&
+		prior.Network.IsNull() &&
+		prior.Packages.IsNull() &&
+		prior.Files.IsNull() &&
+		prior.Skills.IsNull() &&
+		prior.Plugins.IsNull() &&
+		prior.SetupCommands.IsNull()
+}
+
 func templateToState(ctx context.Context, prior templateModel, tpl *client.EnvironmentTemplate) (templateModel, diag.Diagnostics) {
 	var diags diag.Diagnostics
 	out := prior
@@ -336,16 +354,19 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 	out.UpdatedAt = types.Int64Value(tpl.UpdatedAt)
 	out.Name = stringPtrValue(tpl.Name)
 	out.Env = types.MapNull(types.StringType)
+	importing := templateImport(prior)
 
-	if prior.CapabilityDirectories.IsNull() || prior.CapabilityDirectories.IsUnknown() {
-		out.CapabilityDirectories = types.ListNull(types.StringType)
-	} else if tpl.CapabilityDirectories != nil {
+	keepDirs := importing || attrKnown(prior.CapabilityDirectories)
+	if keepDirs && len(tpl.CapabilityDirectories) > 0 {
 		lv, d := types.ListValueFrom(ctx, types.StringType, tpl.CapabilityDirectories)
 		diags.Append(d...)
 		out.CapabilityDirectories = lv
+	} else if !keepDirs {
+		out.CapabilityDirectories = types.ListNull(types.StringType)
 	}
 
-	if prior.Network.IsNull() || prior.Network.IsUnknown() {
+	keepNetwork := importing || attrKnown(prior.Network)
+	if !keepNetwork {
 		out.Network = types.ObjectNull(networkAttrTypes)
 	} else if tpl.Network != nil {
 		domains := types.ListNull(types.StringType)
@@ -362,7 +383,8 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		out.Network = obj
 	}
 
-	if prior.Packages.IsNull() || prior.Packages.IsUnknown() {
+	keepPackages := importing || attrKnown(prior.Packages)
+	if !keepPackages {
 		out.Packages = types.ObjectNull(packagesAttrTypes)
 	} else if tpl.Packages != nil {
 		obj, d := packagesToObject(ctx, *tpl.Packages)
@@ -380,7 +402,8 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		out.EnvKeys = types.ListNull(types.StringType)
 	}
 
-	if prior.Files.IsNull() || prior.Files.IsUnknown() {
+	keepFiles := importing || attrKnown(prior.Files)
+	if !keepFiles || (importing && len(tpl.Files) == 0) {
 		out.Files = types.ListNull(types.ObjectType{AttrTypes: fileAttrTypes})
 	} else {
 		files := make([]attr.Value, 0, len(tpl.Files))
@@ -399,7 +422,8 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		out.Files = lv
 	}
 
-	if prior.Skills.IsNull() || prior.Skills.IsUnknown() {
+	keepSkills := importing || attrKnown(prior.Skills)
+	if !keepSkills || (importing && len(tpl.Skills) == 0) {
 		out.Skills = types.ListNull(types.ObjectType{AttrTypes: skillAttrTypes})
 	} else {
 		skills := make([]attr.Value, 0, len(tpl.Skills))
@@ -425,7 +449,8 @@ func templateToState(ctx context.Context, prior templateModel, tpl *client.Envir
 		out.Skills = lv
 	}
 
-	if prior.Plugins.IsNull() || prior.Plugins.IsUnknown() {
+	keepPlugins := importing || attrKnown(prior.Plugins)
+	if !keepPlugins || (importing && len(tpl.Plugins) == 0) {
 		out.Plugins = types.ListNull(types.ObjectType{AttrTypes: pluginAttrTypes})
 	} else {
 		plugins := make([]attr.Value, 0, len(tpl.Plugins))

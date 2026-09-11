@@ -192,7 +192,9 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		out.ServiceTier = types.StringNull()
 	}
 
-	if prior.Reasoning.IsNull() || prior.Reasoning.IsUnknown() {
+	importing := prior.Model.IsNull() || prior.Model.IsUnknown()
+
+	if (!importing && (prior.Reasoning.IsNull() || prior.Reasoning.IsUnknown())) || (importing && reasoningIsAPIDefault(agent.Reasoning)) {
 		out.Reasoning = types.ObjectNull(reasoningAttrTypes)
 	} else if agent.Reasoning != nil {
 		obj, d := types.ObjectValueFrom(ctx, reasoningAttrTypes, reasoningModel{
@@ -205,7 +207,7 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		out.Reasoning = types.ObjectNull(reasoningAttrTypes)
 	}
 
-	if prior.Text.IsNull() || prior.Text.IsUnknown() {
+	if (!importing && (prior.Text.IsNull() || prior.Text.IsUnknown())) || (importing && textIsAPIDefault(agent.Text)) {
 		out.Text = types.ObjectNull(textAttrTypes)
 	} else if agent.Text != nil {
 		obj, d := textToObject(ctx, *agent.Text)
@@ -215,7 +217,7 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		out.Text = types.ObjectNull(textAttrTypes)
 	}
 
-	if prior.MultiAgent.IsNull() || prior.MultiAgent.IsUnknown() {
+	if !importing && (prior.MultiAgent.IsNull() || prior.MultiAgent.IsUnknown()) {
 		out.MultiAgent = types.ObjectNull(multiAgentAttrTypes)
 	} else if agent.MultiAgent != nil {
 		mm := multiAgentModel{Enabled: types.BoolValue(agent.MultiAgent.Enabled)}
@@ -226,9 +228,13 @@ func agentToState(ctx context.Context, prior agentModel, agent *client.Agent) (a
 		} else {
 			mm.MaxConcurrentSubagents = types.Int64Null()
 		}
-		obj, d := types.ObjectValueFrom(ctx, multiAgentAttrTypes, mm)
-		diags.Append(d...)
-		out.MultiAgent = obj
+		if importing && !agent.MultiAgent.Enabled && agent.MultiAgent.MaxConcurrentSubagents == nil {
+			out.MultiAgent = types.ObjectNull(multiAgentAttrTypes)
+		} else {
+			obj, d := types.ObjectValueFrom(ctx, multiAgentAttrTypes, mm)
+			diags.Append(d...)
+			out.MultiAgent = obj
+		}
 	} else {
 		out.MultiAgent = types.ObjectNull(multiAgentAttrTypes)
 	}
@@ -278,6 +284,34 @@ func textToObject(ctx context.Context, text client.Text) (types.Object, diag.Dia
 	return obj, diags
 }
 
+func reasoningIsAPIDefault(r *client.Reasoning) bool {
+	if r == nil {
+		return true
+	}
+	effort := ""
+	if r.Effort != nil {
+		effort = *r.Effort
+	}
+	return (effort == "" || effort == "medium") && r.Summary == nil
+}
+
+func textIsAPIDefault(t *client.Text) bool {
+	if t == nil {
+		return true
+	}
+	verbosity := ""
+	if t.Verbosity != nil {
+		verbosity = *t.Verbosity
+	}
+	if verbosity != "" && verbosity != "medium" {
+		return false
+	}
+	if t.Format == nil {
+		return true
+	}
+	return t.Format.Type == "text" && len(t.Format.Schema) == 0
+}
+
 func stringPtrValue(v *string) types.String {
 	if v == nil {
 		return types.StringNull()
@@ -318,6 +352,22 @@ func toolsToAPI(ctx context.Context, list types.List) ([]json.RawMessage, diag.D
 	return out, diags
 }
 
+func rejectConflictingToolBlocks(typ string, attrs map[string]attr.Value) diag.Diagnostics {
+	var diags diag.Diagnostics
+	blocks := []string{"function", "programmatic_tool_calling", "mcp", "web_search"}
+	for _, block := range blocks {
+		if block == typ {
+			continue
+		}
+		obj, ok := objectAttr(attrs, block)
+		if !ok || obj.IsNull() || obj.IsUnknown() {
+			continue
+		}
+		diags.AddError("Conflicting tool block", fmt.Sprintf("type %q must not set %s", typ, block))
+	}
+	return diags
+}
+
 func objectAttr(attrs map[string]attr.Value, name string) (types.Object, bool) {
 	v, ok := attrs[name]
 	if !ok || v == nil {
@@ -352,12 +402,19 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 		return nil, diags
 	}
 	typ := typeVal.ValueString()
+	diags.Append(rejectConflictingToolBlocks(typ, attrs)...)
+	if diags.HasError() {
+		return nil, diags
+	}
 	body := map[string]any{"type": typ}
 	switch typ {
 	case "function":
 		fn, ok := objectAttr(attrs, "function")
 		if !ok || fn.IsNull() {
 			diags.AddError("Invalid function tool", "function block is required when type is function")
+			return nil, diags
+		}
+		if fn.IsUnknown() {
 			return nil, diags
 		}
 		var fm struct {
@@ -367,6 +424,9 @@ func toolToAPI(ctx context.Context, obj types.Object) (json.RawMessage, diag.Dia
 			DeferLoading   types.Bool           `tfsdk:"defer_loading"`
 		}
 		diags.Append(fn.As(ctx, &fm, basetypes.ObjectAsOptions{})...)
+		if fm.Name.IsUnknown() || fm.Description.IsUnknown() || fm.ParametersJSON.IsUnknown() || fm.DeferLoading.IsUnknown() {
+			return nil, diags
+		}
 		canon, err := client.CanonicalJSON(fm.ParametersJSON.ValueString())
 		if err != nil {
 			diags.AddError("Invalid function parameters_json", err.Error())
