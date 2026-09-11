@@ -8,7 +8,7 @@ Provider source: [`MemoryStore/openaiagents`](https://registry.terraform.io/prov
 Resource prefix: `openaiagents_*`  
 Terraform: `>= 1.11` (write-only arguments)
 
-The Registry listing is created after the first signed GitHub release (`v0.1.0` or later). Until then, use a [development override](#local-development).
+Published on the Terraform Registry as [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents) (`v0.1.0`).
 
 ## Resources and data sources
 
@@ -40,7 +40,7 @@ Requests send `OpenAI-Beta: agents=v1`.
 go install
 ```
 
-Development override (the Registry package is unpublished):
+Development override (optional; the Registry package is `MemoryStore/openaiagents`):
 
 ```hcl
 provider_installation {
