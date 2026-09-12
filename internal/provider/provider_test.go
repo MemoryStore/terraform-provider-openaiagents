@@ -53,3 +53,13 @@ provider "openaiagents" {
 func testConfig() string {
 	return testProviderConfig(testFake.URL())
 }
+
+// testProviderConfigWithoutKey declares the provider with no api_key so the
+// resolved credential comes from the environment, or is absent entirely.
+func testProviderConfigWithoutKey() string {
+	return fmt.Sprintf(`
+provider "openaiagents" {
+  base_url = %q
+}
+`, testFake.URL())
+}

@@ -1,3 +1,9 @@
+## Unreleased
+
+IMPROVEMENTS:
+
+* Credentials are validated on first API use rather than in provider configuration, so a root that declares the provider but enables no resources can plan without a key.
+
 ## 0.1.5 (2026-09-11)
 
 BUG FIXES:

@@ -46,9 +46,15 @@ func (p *OpenAIAgentsProvider) Schema(_ context.Context, _ provider.SchemaReques
 			"The Registry source is `MemoryStore/openaiagents`.",
 		Attributes: map[string]schema.Attribute{
 			"api_key": schema.StringAttribute{
-				Optional:            true,
-				Sensitive:           true,
-				MarkdownDescription: "OpenAI project API key. If omitted, `OPENAI_API_KEY` is used. This provider never reads `OPENAI_ADMIN_KEY`.",
+				Optional:  true,
+				Sensitive: true,
+				MarkdownDescription: "OpenAI project API key. If omitted, `OPENAI_API_KEY` is used. " +
+					"Configuring the provider does not require the key: a root that declares this provider but enables no objects, " +
+					"for example because every resource is held at `count = 0` or in a module with an empty `for_each`, can be planned without one. " +
+					"A missing key is reported as a `Missing API key` error by the first operation that calls the API, not during provider configuration. " +
+					"That is plan time for a data source or an existing resource being refreshed, and apply time for a resource being created, " +
+					"so a plan that only adds new resources can still succeed without a key. " +
+					"This provider never reads `OPENAI_ADMIN_KEY`.",
 			},
 			"organization": schema.StringAttribute{
 				Optional:            true,
@@ -77,14 +83,12 @@ func (p *OpenAIAgentsProvider) Configure(ctx context.Context, req provider.Confi
 		return
 	}
 
+	// An empty key is not an error here. Terraform runs Configure whenever any
+	// resource in the graph references the provider, including resources held
+	// at count = 0 and modules with an empty for_each, so failing here would
+	// force a key on roots that enable nothing. The client reports the same
+	// "Missing API key" diagnostic at the first request that needs it.
 	apiKey := resolveExplicitOrEnv(data.APIKey, clientAPIKeyEnv)
-	if apiKey == "" {
-		resp.Diagnostics.AddError(
-			"Missing API key",
-			"Set the provider argument api_key or the OPENAI_API_KEY environment variable. This provider does not use OPENAI_ADMIN_KEY.",
-		)
-		return
-	}
 
 	organization := resolveExplicitOrEnv(data.Organization, "OPENAI_ORG_ID")
 	if organization == "" {
