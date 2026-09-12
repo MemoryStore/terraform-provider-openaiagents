@@ -810,6 +810,13 @@ func (s *Server) LastRequest() Request {
 	return s.Requests[len(s.Requests)-1]
 }
 
+// RequestCount returns how many requests the fake API has received.
+func (s *Server) RequestCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.Requests)
+}
+
 // AgentLastWrite returns the raw JSON body of the last create or update for an agent.
 // Tests use this to prove request mapping; it is the inbound payload, not the normalized store.
 func (s *Server) AgentLastWrite(id string) []byte {

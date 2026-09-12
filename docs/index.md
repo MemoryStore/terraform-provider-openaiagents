@@ -26,6 +26,9 @@ provider "openaiagents" {
   # Supply credentials through OPENAI_API_KEY (and optional OPENAI_ORG_ID /
   # OPENAI_PROJECT). Do not check API keys into configuration.
   # This provider never reads OPENAI_ADMIN_KEY.
+  #
+  # The key is checked at first use, not here, so a root that declares this
+  # provider but enables no objects plans without one.
 }
 ```
 
@@ -34,7 +37,7 @@ provider "openaiagents" {
 
 ### Optional
 
-- `api_key` (String, Sensitive) OpenAI project API key. If omitted, `OPENAI_API_KEY` is used. This provider never reads `OPENAI_ADMIN_KEY`.
+- `api_key` (String, Sensitive) OpenAI project API key. If omitted, `OPENAI_API_KEY` is used. The key is only required when a resource or data source is actually planned or applied: a root that declares this provider but enables no objects, for example because every resource is held at `count = 0` or in a module with an empty `for_each`, can be planned without one. A missing key surfaces as a `Missing API key` error at the first API call rather than during provider configuration. This provider never reads `OPENAI_ADMIN_KEY`.
 - `base_url` (String) API base URL including the `/v1` prefix. Defaults to `https://api.openai.com/v1`. HTTP is allowed only for localhost or loopback. If omitted, `OPENAI_BASE_URL` is used.
 - `organization` (String) Optional OpenAI organization ID sent as `OpenAI-Organization`. If omitted, `OPENAI_ORG_ID` or `OPENAI_ORGANIZATION` is used.
 - `project` (String) Optional OpenAI project ID sent as `OpenAI-Project`. If omitted, `OPENAI_PROJECT` is used.

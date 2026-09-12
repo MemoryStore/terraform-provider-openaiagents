@@ -70,3 +70,28 @@ func sanitizeErrorMessage(message string) string {
 	_ = message
 	return "API request failed"
 }
+
+// MissingAPIKeySummary and MissingAPIKeyDetail are the diagnostic strings a
+// caller should surface when a request is attempted without a resolved key.
+// The wording is deliberately identical to the text the provider used to emit
+// from Configure so existing log searches keep matching.
+const (
+	MissingAPIKeySummary = "Missing API key"
+	MissingAPIKeyDetail  = "Set the provider argument api_key or the OPENAI_API_KEY environment variable. This provider does not use OPENAI_ADMIN_KEY."
+)
+
+// MissingAPIKeyError reports a request that was refused before it was sent
+// because the client carries no API key. Credentials are checked here, at
+// first use, rather than during provider configuration, so a configuration
+// that declares the provider without enabling any resource can still plan.
+type MissingAPIKeyError struct{}
+
+func (e *MissingAPIKeyError) Error() string {
+	return MissingAPIKeySummary + ": " + MissingAPIKeyDetail
+}
+
+// IsMissingAPIKey reports whether err is the client's missing-credential error.
+func IsMissingAPIKey(err error) bool {
+	var missing *MissingAPIKeyError
+	return errors.As(err, &missing)
+}

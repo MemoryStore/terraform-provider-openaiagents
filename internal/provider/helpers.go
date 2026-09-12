@@ -28,6 +28,13 @@ func configureClient(providerData any, diags *diag.Diagnostics) *client.Client {
 }
 
 func addClientError(diags *diag.Diagnostics, summary string, err error) {
+	// Credentials are checked at first use rather than during provider
+	// configuration, so the missing-key failure surfaces here instead. Report it
+	// with the summary and detail Configure used to emit.
+	if client.IsMissingAPIKey(err) {
+		diags.AddError(client.MissingAPIKeySummary, client.MissingAPIKeyDetail)
+		return
+	}
 	diags.AddError(summary, err.Error())
 }
 

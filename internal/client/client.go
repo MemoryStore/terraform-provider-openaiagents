@@ -39,11 +39,11 @@ type Client struct {
 }
 
 // New constructs a Client. It never reads OPENAI_ADMIN_KEY.
+//
+// An empty APIKey is accepted. The key is checked lazily, on the first request
+// the Client sends, so a Terraform configuration that declares the provider
+// without enabling any resource can be planned without credentials.
 func New(opts Options) (*Client, error) {
-	if strings.TrimSpace(opts.APIKey) == "" {
-		return nil, fmt.Errorf("api_key is required")
-	}
-
 	base := opts.BaseURL
 	if strings.TrimSpace(base) == "" {
 		base = defaultBaseURL
@@ -105,6 +105,10 @@ func validatePathSegment(id string) error {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, rawURL, operation, resource, id string, body any, out any) error {
+	if strings.TrimSpace(c.apiKey) == "" {
+		return &MissingAPIKeyError{}
+	}
+
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
