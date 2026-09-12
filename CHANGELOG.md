@@ -1,4 +1,4 @@
-## 0.1.6 (2026-09-12)
+## Unreleased
 
 IMPROVEMENTS:
 

@@ -15,11 +15,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
 	"github.com/MemoryStore/terraform-provider-openaiagents/internal/client"
+	"github.com/MemoryStore/terraform-provider-openaiagents/internal/testfake"
 )
 
-// configureTestProvider runs Configure against a provider configuration whose
-// attributes are the supplied raw values. A nil entry is a null attribute.
-func configureTestProvider(t *testing.T, attrs map[string]*string) *fwprovider.ConfigureResponse {
+// configureTestProvider runs Configure against a provider configuration built
+// from the live schema, so a new provider attribute does not silently break the
+// helper. Attributes named in attrs take that value; every other attribute in
+// the schema is null.
+func configureTestProvider(t *testing.T, attrs map[string]tftypes.Value) *fwprovider.ConfigureResponse {
 	t.Helper()
 	ctx := context.Background()
 	p := &OpenAIAgentsProvider{version: "test"}
@@ -31,12 +34,17 @@ func configureTestProvider(t *testing.T, attrs map[string]*string) *fwprovider.C
 	}
 
 	values := map[string]tftypes.Value{}
-	for _, name := range []string{"api_key", "organization", "project", "base_url"} {
-		if v, ok := attrs[name]; ok && v != nil {
-			values[name] = tftypes.NewValue(tftypes.String, *v)
+	for name := range schemaResp.Schema.Attributes {
+		if v, ok := attrs[name]; ok {
+			values[name] = v
 			continue
 		}
 		values[name] = tftypes.NewValue(tftypes.String, nil)
+	}
+	for name := range attrs {
+		if _, ok := schemaResp.Schema.Attributes[name]; !ok {
+			t.Fatalf("attribute %q is not in the provider schema", name)
+		}
 	}
 
 	resp := &fwprovider.ConfigureResponse{}
@@ -49,11 +57,12 @@ func configureTestProvider(t *testing.T, attrs map[string]*string) *fwprovider.C
 	return resp
 }
 
-func str(v string) *string { return &v }
+func tfString(v string) tftypes.Value { return tftypes.NewValue(tftypes.String, v) }
 
 // authorizationSentBy drives one request through the configured client and
-// reports the Authorization header the fake API observed.
-func authorizationSentBy(t *testing.T, resp *fwprovider.ConfigureResponse) string {
+// reports the Authorization header the fake API observed. The caller owns the
+// fake, so this never disturbs the package-wide testFake other tests read.
+func authorizationSentBy(t *testing.T, resp *fwprovider.ConfigureResponse, fake *testfake.Server) string {
 	t.Helper()
 	c, ok := resp.ResourceData.(*client.Client)
 	if !ok {
@@ -62,15 +71,16 @@ func authorizationSentBy(t *testing.T, resp *fwprovider.ConfigureResponse) strin
 	if _, err := c.CreateAgent(context.Background(), client.AgentWrite{Model: "gpt-6-astra"}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	return testFake.LastRequest().Headers.Get("Authorization")
+	return fake.LastRequest().Headers.Get("Authorization")
 }
 
 // Terraform calls Configure whenever a resource references the provider, which
 // includes resources held at count = 0. An absent key must not fail that.
 func TestConfigureWithoutAPIKeySucceeds(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
+	fake := testfake.Start(t)
 
-	resp := configureTestProvider(t, map[string]*string{"base_url": str(testFake.URL())})
+	resp := configureTestProvider(t, map[string]tftypes.Value{"base_url": tfString(fake.URL())})
 
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("expected no error diagnostics, got %v", resp.Diagnostics)
@@ -85,29 +95,47 @@ func TestConfigureWithoutAPIKeySucceeds(t *testing.T) {
 
 func TestConfigureFallsBackToEnvAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-from-env")
+	fake := testfake.Start(t)
 
-	resp := configureTestProvider(t, map[string]*string{"base_url": str(testFake.URL())})
+	resp := configureTestProvider(t, map[string]tftypes.Value{"base_url": tfString(fake.URL())})
 
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("configure: %v", resp.Diagnostics)
 	}
-	if got := authorizationSentBy(t, resp); got != "Bearer sk-from-env" {
+	if got := authorizationSentBy(t, resp, fake); got != "Bearer sk-from-env" {
 		t.Fatalf("authorization = %q, want the environment key", got)
+	}
+}
+
+// A key carrying a trailing newline, as file() or a shell export produces, is
+// trimmed rather than rejected by net/http as a malformed header.
+func TestConfigureTrimsResolvedAPIKey(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-from-env\n")
+	fake := testfake.Start(t)
+
+	resp := configureTestProvider(t, map[string]tftypes.Value{"base_url": tfString(fake.URL())})
+
+	if resp.Diagnostics.HasError() {
+		t.Fatalf("configure: %v", resp.Diagnostics)
+	}
+	if got := authorizationSentBy(t, resp, fake); got != "Bearer sk-from-env" {
+		t.Fatalf("authorization = %q, want the trimmed key", got)
 	}
 }
 
 func TestConfigureAttributeOverridesEnvAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-from-env")
+	fake := testfake.Start(t)
 
-	resp := configureTestProvider(t, map[string]*string{
-		"api_key":  str("sk-from-attribute"),
-		"base_url": str(testFake.URL()),
+	resp := configureTestProvider(t, map[string]tftypes.Value{
+		"api_key":  tfString("sk-from-attribute"),
+		"base_url": tfString(fake.URL()),
 	})
 
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("configure: %v", resp.Diagnostics)
 	}
-	if got := authorizationSentBy(t, resp); got != "Bearer sk-from-attribute" {
+	if got := authorizationSentBy(t, resp, fake); got != "Bearer sk-from-attribute" {
 		t.Fatalf("authorization = %q, want the attribute key", got)
 	}
 }
@@ -115,24 +143,10 @@ func TestConfigureAttributeOverridesEnvAPIKey(t *testing.T) {
 // Unknown provider values still defer configuration entirely.
 func TestConfigureDefersOnUnknownAPIKey(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
-	ctx := context.Background()
-	p := &OpenAIAgentsProvider{version: "test"}
 
-	schemaResp := &fwprovider.SchemaResponse{}
-	p.Schema(ctx, fwprovider.SchemaRequest{}, schemaResp)
-
-	resp := &fwprovider.ConfigureResponse{}
-	p.Configure(ctx, fwprovider.ConfigureRequest{
-		Config: tfsdk.Config{
-			Schema: schemaResp.Schema,
-			Raw: tftypes.NewValue(schemaResp.Schema.Type().TerraformType(ctx), map[string]tftypes.Value{
-				"api_key":      tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
-				"organization": tftypes.NewValue(tftypes.String, nil),
-				"project":      tftypes.NewValue(tftypes.String, nil),
-				"base_url":     tftypes.NewValue(tftypes.String, nil),
-			}),
-		},
-	}, resp)
+	resp := configureTestProvider(t, map[string]tftypes.Value{
+		"api_key": tftypes.NewValue(tftypes.String, tftypes.UnknownValue),
+	})
 
 	if resp.Diagnostics.HasError() {
 		t.Fatalf("expected no error diagnostics, got %v", resp.Diagnostics)

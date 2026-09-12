@@ -8,7 +8,7 @@ Provider source: [`MemoryStore/openaiagents`](https://registry.terraform.io/prov
 Resource prefix: `openaiagents_*`  
 Terraform: `>= 1.11` (write-only arguments)
 
-Published on the Terraform Registry as [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents) (`v0.1.6`).
+Published on the Terraform Registry as [`MemoryStore/openaiagents`](https://registry.terraform.io/providers/MemoryStore/openaiagents) (`v0.1.5`).
 
 ## Resources and data sources
 
@@ -32,7 +32,9 @@ Optional: `organization` (`OPENAI_ORG_ID` / `OPENAI_ORGANIZATION`), `project` (`
 
 This provider **never reads or forwards `OPENAI_ADMIN_KEY`**. Use `openai/openai` separately for organization administration.
 
-The key is checked at first API use, not during provider configuration. Terraform runs a provider's `Configure` whenever anything in the graph references it, including resources held at `count = 0` and modules with an empty `for_each`, so a root that declares this provider without enabling any object plans without a key. A missing key is reported as `Missing API key` by the first resource or data source that calls the API.
+The key is checked at first API use, not during provider configuration. Terraform runs a provider's `Configure` whenever anything in the graph references it, including resources held at `count = 0` and modules with an empty `for_each`, so a root that declares this provider without enabling any object plans without a key.
+
+A missing key is reported as `Missing API key` by the first operation that calls the API. That is plan time for a data source or an existing resource being refreshed, and apply time for a resource being created — so a plan that only adds new resources can succeed without a key and still fail at apply.
 
 Requests send `OpenAI-Beta: agents=v1`.
 

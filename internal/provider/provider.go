@@ -49,9 +49,11 @@ func (p *OpenAIAgentsProvider) Schema(_ context.Context, _ provider.SchemaReques
 				Optional:  true,
 				Sensitive: true,
 				MarkdownDescription: "OpenAI project API key. If omitted, `OPENAI_API_KEY` is used. " +
-					"The key is only required when a resource or data source is actually planned or applied: a root that declares this provider but enables no objects, " +
+					"Configuring the provider does not require the key: a root that declares this provider but enables no objects, " +
 					"for example because every resource is held at `count = 0` or in a module with an empty `for_each`, can be planned without one. " +
-					"A missing key surfaces as a `Missing API key` error at the first API call rather than during provider configuration. " +
+					"A missing key is reported as a `Missing API key` error by the first operation that calls the API, not during provider configuration. " +
+					"That is plan time for a data source or an existing resource being refreshed, and apply time for a resource being created, " +
+					"so a plan that only adds new resources can still succeed without a key. " +
 					"This provider never reads `OPENAI_ADMIN_KEY`.",
 			},
 			"organization": schema.StringAttribute{

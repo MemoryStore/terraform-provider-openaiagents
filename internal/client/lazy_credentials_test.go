@@ -15,13 +15,8 @@ import (
 // The client is constructible without credentials so the provider can be
 // configured by roots that enable no resources.
 func TestNewAcceptsEmptyAPIKey(t *testing.T) {
-	fake := testfake.Start(t)
-	c, err := client.New(client.Options{BaseURL: fake.URL()})
-	if err != nil {
+	if _, err := client.New(client.Options{BaseURL: "http://127.0.0.1:1/v1"}); err != nil {
 		t.Fatalf("New with empty api_key: %v", err)
-	}
-	if c == nil {
-		t.Fatal("expected a client")
 	}
 }
 
@@ -46,6 +41,30 @@ func TestRequestWithoutAPIKeyIsRefusedBeforeSend(t *testing.T) {
 		}},
 		{"DeleteAgent", func() error {
 			return c.DeleteAgent(context.Background(), "agent_123")
+		}},
+		{"UpdateAgent", func() error {
+			_, err := c.UpdateAgent(context.Background(), "agent_123", client.AgentWrite{Model: "gpt-6-astra"})
+			return err
+		}},
+		{"CreateTemplate", func() error {
+			_, err := c.CreateTemplate(context.Background(), client.TemplateWrite{})
+			return err
+		}},
+		{"GetTemplate", func() error {
+			_, err := c.GetTemplate(context.Background(), "env_123")
+			return err
+		}},
+		{"CreateVault", func() error {
+			_, err := c.CreateVault(context.Background(), client.VaultWrite{})
+			return err
+		}},
+		{"GetVault", func() error {
+			_, err := c.GetVault(context.Background(), "vault_123")
+			return err
+		}},
+		{"GetCredential", func() error {
+			_, err := c.GetCredential(context.Background(), "vault_123", "cred_123")
+			return err
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -79,6 +98,21 @@ func TestBlankAPIKeyIsTreatedAsMissing(t *testing.T) {
 	}
 	if _, err := c.CreateAgent(context.Background(), client.AgentWrite{Model: "gpt-6-astra"}); !client.IsMissingAPIKey(err) {
 		t.Fatalf("IsMissingAPIKey = false for %v", err)
+	}
+}
+
+// Surrounding whitespace is trimmed rather than producing a malformed header.
+func TestPaddedAPIKeyIsTrimmedOntoTheWire(t *testing.T) {
+	fake := testfake.Start(t)
+	c, err := client.New(client.Options{APIKey: "  sk-test\n", BaseURL: fake.URL()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateAgent(context.Background(), client.AgentWrite{Model: "gpt-6-astra"}); err != nil {
+		t.Fatalf("create agent: %v", err)
+	}
+	if got := fake.LastRequest().Headers.Get("Authorization"); got != "Bearer sk-test" {
+		t.Fatalf("authorization = %q, want the trimmed key", got)
 	}
 }
 

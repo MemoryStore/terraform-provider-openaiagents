@@ -43,6 +43,11 @@ type Client struct {
 // An empty APIKey is accepted. The key is checked lazily, on the first request
 // the Client sends, so a Terraform configuration that declares the provider
 // without enabling any resource can be planned without credentials.
+//
+// The key is trimmed once here so that the value deciding presence is the same
+// value that reaches the Authorization header. A key read from a file keeps its
+// trailing newline otherwise, which net/http rejects as a malformed header
+// rather than as a credential problem.
 func New(opts Options) (*Client, error) {
 	base := opts.BaseURL
 	if strings.TrimSpace(base) == "" {
@@ -65,7 +70,7 @@ func New(opts Options) (*Client, error) {
 	}
 
 	return &Client{
-		apiKey:          opts.APIKey,
+		apiKey:          strings.TrimSpace(opts.APIKey),
 		organization:    opts.Organization,
 		project:         opts.Project,
 		baseURL:         endpoint,
@@ -105,7 +110,7 @@ func validatePathSegment(id string) error {
 }
 
 func (c *Client) doJSON(ctx context.Context, method, rawURL, operation, resource, id string, body any, out any) error {
-	if strings.TrimSpace(c.apiKey) == "" {
+	if c.apiKey == "" {
 		return &MissingAPIKeyError{}
 	}
 
